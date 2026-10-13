@@ -1,0 +1,1634 @@
+<title>Accidental Highlighter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Hanken+Grotesk:wght@400;500;600;700&family=Noto+Music&display=swap">
+<style>
+/* Layout: one-screen workspace. Score viewer on the left, control panel on the right; stacked behind tabs on phones. */
+:root {
+  --font-ui: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-music: 'Noto Music', 'Bravura Text', 'Apple Symbols', 'Segoe UI Symbol', serif;
+  --desk: #DDE1E8;
+  --panel: #F7F8FA;
+  --card: #FFFFFF;
+  --ink: #12161C;
+  --muted: #566070;
+  --line: #D3D8E1;
+  --accent: #2340C8;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #E4E9FC;
+  --danger: #B3261E;
+  --ok: #17794A;
+  --paper: #FFFFFF;
+  --shadow: 0 1px 2px rgba(18, 22, 28, .12), 0 6px 22px rgba(18, 22, 28, .12);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --desk: #0B0D11; --panel: #151920; --card: #1C212A; --ink: #E7EAF0; --muted: #99A2B1; --line: #2B323D;
+    --accent: #93A6FF; --accent-ink: #0D1230; --accent-soft: #232B52; --danger: #FF8A80; --ok: #6FD9A1;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 28px rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --desk: #0B0D11; --panel: #151920; --card: #1C212A; --ink: #E7EAF0; --muted: #99A2B1; --line: #2B323D;
+  --accent: #93A6FF; --accent-ink: #0D1230; --accent-soft: #232B52; --danger: #FF8A80; --ok: #6FD9A1;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 28px rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--panel); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.4; overflow: hidden; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.music { font-family: var(--font-music); }
+
+#app { height: 100%; display: flex; flex-direction: column; min-width: 0; }
+
+/* top bar */
+.top { display: flex; align-items: center; gap: 12px; padding: 9px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; letter-spacing: -.01em; white-space: nowrap; }
+.brand svg { width: 30px; height: 22px; flex: none; }
+.file { flex: 1 1 160px; min-width: 0; display: flex; align-items: baseline; gap: 8px; color: var(--muted); font-size: 13px; }
+.file b { color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.file span { white-space: nowrap; font-family: var(--font-mono); font-size: 12px; }
+.btn { border: 1px solid var(--line); background: var(--card); border-radius: 7px; padding: 6px 12px; font-weight: 500; line-height: 1.2; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn.small { padding: 4px 9px; font-size: 13px; }
+.btn.ghost { background: transparent; }
+
+.tabs { display: none; border-bottom: 1px solid var(--line); background: var(--panel); padding: 0 16px; gap: 4px; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 9px 10px; font-weight: 600; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--ink); border-color: var(--accent); }
+
+.main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 348px; }
+
+/* viewer */
+.viewer { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--desk); }
+.vbar { display: flex; align-items: center; gap: 6px; padding: 7px 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.vbar .sp { flex: 1; }
+.vbar .pg { font-family: var(--font-mono); font-size: 12px; color: var(--muted); min-width: 74px; text-align: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: var(--card); }
+.seg button { background: none; border: 0; padding: 5px 10px; min-width: 32px; font-weight: 600; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button:hover:not(:disabled) { background: var(--accent-soft); }
+.seg button:disabled { opacity: .4; cursor: default; }
+.scroller { flex: 1; min-height: 0; overflow: auto; padding: 18px 16px 40px; position: relative; }
+.page { position: relative; margin: 0 auto 18px; background: var(--paper); box-shadow: var(--shadow); isolation: isolate; flex: none; }
+.page canvas { display: block; position: absolute; inset: 0; }
+.page .ov { position: absolute; inset: 0; }
+.page .plabel { position: absolute; left: 0; top: -15px; font: 11px var(--font-mono); color: var(--muted); }
+.mark { position: absolute; border-radius: 2px; cursor: pointer; }
+.mark::before { content: ""; position: absolute; inset: -5px; }
+.mark.on { background: var(--c); mix-blend-mode: multiply; opacity: var(--op, .55); }
+.mark.sign { pointer-events: none; }
+.mark.sign::before { display: none; }
+.mark:not(.on):not(.sign):hover { outline: 1.5px dashed var(--accent); outline-offset: 1px; }
+.ins-staff { position: absolute; border: 1px solid rgba(35, 64, 200, .55); pointer-events: none; }
+.ins-g { position: absolute; pointer-events: none; border: 1px solid; opacity: .9; }
+.ins-g.notehead { border-color: #2340C8; } .ins-g.clef { border-color: #0A8F6A; } .ins-g.acc { border-color: #C2185B; }
+.ins-g.other { border-color: #8A6D00; }
+.ins-orphan { position: absolute; pointer-events: none; border: 1.5px dashed #D32F2F; background: rgba(211, 47, 47, .12); }
+.empty { max-width: 420px; margin: 18vh auto 0; text-align: center; color: var(--muted); }
+.empty h3 { margin: 0 0 6px; color: var(--ink); font-size: 17px; }
+.progress { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: transparent; z-index: 5; pointer-events: none; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+.drop { position: absolute; inset: 8px; border: 2px dashed var(--accent); border-radius: 12px; background: var(--accent-soft); background: color-mix(in srgb, var(--accent) 10%, transparent); display: none; align-items: center; justify-content: center; font-weight: 600; z-index: 6; pointer-events: none; }
+.viewer.dragging .drop { display: flex; }
+
+/* panel */
+.panel { background: var(--panel); border-left: 1px solid var(--line); overflow: auto; min-height: 0; padding: 4px 16px 24px; }
+.grp { padding: 14px 0 12px; border-bottom: 1px solid var(--line); }
+.grp:last-child { border-bottom: 0; }
+.grp h2 { margin: 0 0 9px; font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.summary { padding: 12px 0 12px; border-bottom: 1px solid var(--line); }
+.summary .big { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.summary .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.notice { margin-top: 9px; padding: 8px 10px; border-radius: 7px; background: var(--accent-soft); font-size: 13px; }
+.notice.warn { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--danger); background: color-mix(in srgb, var(--danger) 13%, var(--panel)); }
+.notice button { margin-top: 6px; display: block; }
+.cat { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 6px 0; }
+.cat .lbl { min-width: 0; }
+.cat .lbl b { display: block; font-weight: 600; font-size: 13.5px; }
+.cat .lbl small { display: block; color: var(--muted); font-size: 12px; line-height: 1.3; }
+.cat .n { font-family: var(--font-mono); font-size: 13px; text-align: right; min-width: 28px; }
+.cat .n small { color: var(--muted); font-size: 11px; }
+input[type=color] { width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type=color]::-webkit-color-swatch { border: 0; border-radius: 4px; }
+input.sw { appearance: none; -webkit-appearance: none; width: 34px; height: 20px; border-radius: 10px; background: var(--line); position: relative; cursor: pointer; margin: 0; transition: background .15s; flex: none; }
+input.sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--card); box-shadow: 0 1px 2px rgba(0, 0, 0, .3); transition: transform .15s; }
+input.sw:checked { background: var(--accent); }
+input.sw:checked::after { transform: translateX(14px); }
+.field { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.field label { flex: none; color: var(--muted); font-size: 13px; }
+.field input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.check { display: flex; align-items: center; gap: 9px; margin-top: 8px; font-size: 13.5px; cursor: pointer; }
+.check input:not(.sw) { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+.btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 9px 0 0; }
+.staff { display: grid; grid-template-columns: 54px 1fr 1fr; gap: 6px; align-items: center; padding: 3px 0; }
+.staff span { font-size: 12.5px; color: var(--muted); }
+select { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; min-width: 0; max-width: 100%; }
+.stack { display: flex; flex-direction: column; gap: 6px; }
+.stack .btn { text-align: left; }
+.foot { color: var(--muted); font-size: 11.5px; padding-top: 14px; }
+
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(12px); background: var(--ink); color: var(--panel); padding: 8px 14px; border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s; z-index: 30; max-width: calc(100vw - 32px); }
+.toast.show { opacity: 1; transform: translateX(-50%); }
+
+/* symbol map */
+.modal { position: fixed; inset: 0; background: rgba(8, 10, 14, .55); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 20; }
+.modal.open { display: flex; }
+.sheet { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; width: 100%; max-width: 760px; max-height: 100%; display: flex; flex-direction: column; box-shadow: var(--shadow); min-height: 0; }
+.sheet header { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: flex-start; }
+.sheet header div { flex: 1; min-width: 0; }
+.sheet h3 { margin: 0; font-size: 16px; }
+.sheet header p { margin: 3px 0 0; color: var(--muted); font-size: 13px; }
+.sheet .body { overflow: auto; padding: 4px 16px; min-height: 0; }
+.sheet footer { padding: 10px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sheet footer .sp { flex: 1; }
+.sym { display: grid; grid-template-columns: 76px minmax(0, 1fr) 170px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.sym:last-child { border-bottom: 0; }
+.sym .th { width: 76px; height: 64px; background: #fff; border: 1px solid var(--line); border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.sym .th canvas { max-width: 100%; max-height: 100%; }
+.sym .nm { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.sym .nm small { display: block; color: var(--muted); font-family: var(--font-ui); font-size: 12px; margin-top: 2px; }
+.sym .ctl { display: flex; flex-direction: column; gap: 5px; }
+.sym .shift { display: none; font-size: 12px; color: var(--muted); align-items: center; gap: 6px; }
+.adv .sym .shift { display: flex; }
+.tag { display: inline-block; padding: 0 6px; border-radius: 4px; font-family: var(--font-ui); font-size: 11px; background: var(--accent-soft); margin-left: 5px; }
+.sec { margin: 14px 0 2px; font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+
+@media (max-width: 860px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .tabs { display: flex; }
+  #app[data-tab="score"] .panel { display: none; }
+  #app[data-tab="controls"] .viewer { display: none; }
+  .panel { border-left: 0; }
+  .scroller { padding: 12px 8px 40px; }
+  .sym { grid-template-columns: 76px minmax(0, 1fr); }
+  .sym .ctl { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div id="app" data-tab="score">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 30 22" aria-hidden="true"><g stroke="currentColor" stroke-width="1" opacity=".55"><path d="M0 4h30M0 8h30M0 12h30M0 16h30M0 20h30"/></g><rect x="14" y="5" width="11" height="6.5" rx="1.5" fill="#FFD60A" opacity=".85"/><ellipse cx="19.5" cy="8" rx="3.3" ry="2.3" fill="currentColor" transform="rotate(-18 19.5 8)"/><path d="M12 5.5v5M13.7 4.8v5" stroke="currentColor" stroke-width="1"/></svg>
+      <span>Accidental Highlighter</span>
+    </div>
+    <div class="file" id="fileInfo"><b id="fileName">No score open</b><span id="fileMeta"></span></div>
+    <button class="btn" id="btnSample" type="button">Sample score</button>
+    <button class="btn primary" id="btnOpen" type="button">Open PDF</button>
+    <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" id="tabScore" aria-selected="true">Score</button>
+    <button type="button" role="tab" id="tabControls" aria-selected="false">Highlights</button>
+  </nav>
+  <div class="main">
+    <section class="viewer" id="viewer" aria-label="Score">
+      <div class="progress"><i id="progressBar"></i></div>
+      <div class="vbar">
+        <div class="seg" role="group" aria-label="Zoom">
+          <button type="button" id="zOut" aria-label="Zoom out">&minus;</button>
+          <button type="button" id="zFit" aria-label="Fit width">Fit</button>
+          <button type="button" id="zIn" aria-label="Zoom in">+</button>
+        </div>
+        <div class="seg" role="group" aria-label="Page">
+          <button type="button" id="pPrev" aria-label="Previous page">&lsaquo;</button>
+          <button type="button" id="pNext" aria-label="Next page">&rsaquo;</button>
+        </div>
+        <span class="pg" id="pageInd">&nbsp;</span>
+        <span class="sp"></span>
+        <div class="seg" role="group" aria-label="History">
+          <button type="button" id="undo" aria-label="Undo" title="Undo (Ctrl+Z)">Undo</button>
+          <button type="button" id="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+        </div>
+        <label class="check" style="margin:0 0 0 6px" title="Outline detected staves, noteheads and accidental signs"><input type="checkbox" class="sw" id="inspect" role="switch"> Inspect</label>
+      </div>
+      <div class="scroller" id="scroller"><div id="pages"></div></div>
+      <div class="drop">Drop a PDF to open it</div>
+    </section>
+    <aside class="panel" id="panel" aria-label="Controls">
+      <div class="summary" id="summary"></div>
+      <section class="grp" aria-labelledby="h-hl">
+        <h2 id="h-hl">Highlights</h2>
+        <div id="cats"></div>
+        <div class="field"><label for="opacity">Strength</label><input type="range" id="opacity" min="25" max="90" step="5" value="55"></div>
+        <label class="check"><input type="checkbox" id="markSign"> Also mark the accidental sign</label>
+      </section>
+      <section class="grp" aria-labelledby="h-rm">
+        <h2 id="h-rm">Remove</h2>
+        <div class="btnrow">
+          <button type="button" class="btn small" id="rmPage">This page</button>
+          <button type="button" class="btn small" id="rmAll">Everywhere</button>
+          <button type="button" class="btn small ghost" id="restore">Put back</button>
+        </div>
+        <p class="hint">Click any note in the score to remove or add its highlight. Switching a category off above also removes it.</p>
+      </section>
+      <section class="grp" aria-labelledby="h-st">
+        <h2 id="h-st">Staves on this page</h2>
+        <div id="staves"></div>
+        <p class="hint" id="stavesHint">Clef and key are read from the page. Change them here if a staff is wrong.</p>
+      </section>
+      <section class="grp" aria-labelledby="h-sy">
+        <h2 id="h-sy">Symbols</h2>
+        <div id="symbolInfo" class="hint" style="margin-top:0"></div>
+        <div class="btnrow" style="margin-top:8px"><button type="button" class="btn small" id="btnSymbols">Symbol map</button></div>
+      </section>
+      <section class="grp" aria-labelledby="h-sv">
+        <h2 id="h-sv">Save</h2>
+        <div class="stack">
+          <button type="button" class="btn primary" id="exAnn">Annotated PDF</button>
+          <button type="button" class="btn" id="exClean">PDF without highlights</button>
+          <button type="button" class="btn" id="exJson">Note list (JSON)</button>
+        </div>
+        <p class="hint" id="exHint">Your file is never uploaded. Highlights are saved as standard PDF annotations, so Acrobat, Preview and forScore can show and delete them too.</p>
+      </section>
+      <p class="foot">Sample score engraved with Bravura (SIL Open Font License). Reads vector PDFs exported from notation software; scans are not supported yet.</p>
+    </aside>
+  </div>
+</div>
+
+<div class="modal" id="symModal" role="dialog" aria-modal="true" aria-labelledby="symTitle">
+  <div class="sheet" id="symSheet">
+    <header>
+      <div><h3 id="symTitle">Symbol map</h3><p>Every symbol found on the staves, with what it is treated as. If a notehead, accidental or clef is not recognized, pick its role once. The choice is remembered for this font.</p></div>
+      <button type="button" class="btn small" id="symClose">Done</button>
+    </header>
+    <div class="body" id="symBody"></div>
+    <footer>
+      <label class="check" style="margin:0"><input type="checkbox" id="symHide"> Hide recognized symbols</label>
+      <label class="check" style="margin:0"><input type="checkbox" id="symTxt"> Show text characters</label>
+      <label class="check" style="margin:0"><input type="checkbox" id="symAdv"> Show pitch shift</label>
+      <span class="sp"></span>
+      <button type="button" class="btn small ghost" id="symReset">Reset my choices</button>
+    </footer>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script>
+/* Accidental Highlighter: detection engine.
+ * Works in browsers (global AccEngine) and Node (module.exports).
+ * Two stages:
+ *   extractPage(page, pdfjsLib)  -> prims  (glyphs, line segments, curves; async, slow, cached)
+ *   detectPage(prims, cfg)       -> result (staves, notes, categories; sync, fast, re-run on changes)
+ */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) module.exports = factory();
+  else root.AccEngine = factory();
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  var NOTE_NAMES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  var SHARP_ORDER = ['F', 'C', 'G', 'D', 'A', 'E', 'B'];
+  var FLAT_ORDER = ['B', 'E', 'A', 'D', 'G', 'C', 'F'];
+  var ACC_ALT = { sharp: 1, flat: -1, natural: 0, dsharp: 2, dflat: -2, accOther: 0.5 };
+  var ACC_ROLES = ['sharp', 'flat', 'natural', 'dsharp', 'dflat', 'accOther'];
+  var ROLES = [
+    ['notehead', 'Notehead'], ['sharp', 'Sharp'], ['flat', 'Flat'], ['natural', 'Natural'],
+    ['dsharp', 'Double sharp'], ['dflat', 'Double flat'], ['accOther', 'Other accidental'],
+    ['paren', 'Accidental parenthesis'], ['clefG', 'G clef'], ['clefF', 'F clef'], ['clefC', 'C clef'],
+    ['rest', 'Rest'], ['timesig', 'Time signature'], ['ignore', 'Ignore']
+  ];
+  var CLEF_NAMES = { 'G2': 'treble', 'G0': 'French violin', 'F6': 'bass', 'F4': 'baritone', 'F8': 'subbass',
+    'C4': 'alto', 'C6': 'tenor', 'C2': 'mezzo-soprano', 'C0': 'soprano', 'C8': 'baritone (C)' };
+  var CAT_LIST = ['explicit', 'keysig', 'carried', 'natural', 'cautionary'];
+
+  function mod(a, n) { return ((a % n) + n) % n; }
+  function hex4(n) { var s = n.toString(16).toUpperCase(); while (s.length < 4) s = '0' + s; return s; }
+
+  /* ---------- built-in glyph tables (SMuFL + Unicode music block) ---------- */
+  function defaultRole(k) {
+    if (!k || k.charAt(0) !== 'u') return null;
+    var cp = parseInt(k.slice(2), 16);
+    if (cp >= 0xE0A0 && cp <= 0xE0A4) return 'notehead';
+    if (cp === 0xE260) return 'flat';
+    if (cp === 0xE261) return 'natural';
+    if (cp === 0xE262) return 'sharp';
+    if (cp === 0xE263) return 'dsharp';
+    if (cp === 0xE264) return 'dflat';
+    if (cp === 0xE26A || cp === 0xE26B) return 'paren';
+    if (cp >= 0xE270 && cp <= 0xE2FF) return 'accOther';
+    if (cp >= 0xE050 && cp <= 0xE05B) return 'clefG';
+    if (cp >= 0xE05C && cp <= 0xE060) return 'clefC';
+    if (cp >= 0xE062 && cp <= 0xE068) return 'clefF';
+    if (cp === 0xE07A) return 'clefG';
+    if (cp === 0xE07B) return 'clefC';
+    if (cp === 0xE07C) return 'clefF';
+    if (cp >= 0xE080 && cp <= 0xE09F) return 'timesig';
+    if (cp >= 0xE4E0 && cp <= 0xE4FF) return 'rest';
+    if (cp === 0x266D) return 'flat';
+    if (cp === 0x266E) return 'natural';
+    if (cp === 0x266F) return 'sharp';
+    if (cp === 0x1D12A) return 'dsharp';
+    if (cp === 0x1D12B) return 'dflat';
+    if (cp === 0x1D11E) return 'clefG';
+    if (cp === 0x1D122) return 'clefF';
+    if (cp === 0x1D121) return 'clefC';
+    return null;
+  }
+  function isPUA(k) {
+    if (!k || k.charAt(0) !== 'u') return false;
+    var cp = parseInt(k.slice(2), 16);
+    return cp >= 0xE000 && cp <= 0xF8FF;
+  }
+
+  /* ---------- stage 1: read the page ---------- */
+  function mult(a, b) {
+    return [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3],
+      a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3],
+      a[4] * b[0] + a[5] * b[2] + b[4], a[4] * b[1] + a[5] * b[3] + b[5]];
+  }
+  function apply(m, x, y) { return [x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]]; }
+
+  async function extractPage(page, pdfjsLib) {
+    var OPS = pdfjsLib.OPS;
+    var ol = await page.getOperatorList();
+    var fnA = ol.fnArray, arA = ol.argsArray;
+    /* fonts resolve asynchronously in browsers: wait (briefly) so real font names are available */
+    var ids = {};
+    for (var q = 0; q < fnA.length; q++) if (fnA[q] === OPS.setFont && arA[q] && arA[q][0]) ids[arA[q][0]] = true;
+    await Promise.all(Object.keys(ids).map(function (id) {
+      return new Promise(function (res) {
+        var done = false, fin = function () { if (!done) { done = true; res(); } };
+        try { page.commonObjs.get(id, fin); } catch (e) { fin(); }
+        setTimeout(fin, 4000);
+      });
+    }));
+    var fontCache = {};
+    function fontInfo(id) {
+      if (fontCache[id]) return fontCache[id];
+      var f = null;
+      try { if (page.commonObjs.has(id)) f = page.commonObjs.get(id); } catch (e) { f = null; }
+      var name = (f && (f.name || f.fontName || f.loadedName)) || String(id);
+      name = String(name).replace(/^[A-Z]{6}\+/, '');
+      var fm = f && f.fontMatrix && f.fontMatrix[0] ? f.fontMatrix[0] : 0.001;
+      return (fontCache[id] = { name: name, fm: fm });
+    }
+    var ctm = [1, 0, 0, 1, 0, 0], stack = [];
+    var glyphs = [], hsegs = [], vsegs = [], curves = [];
+    var fid = null, fsize = 0, charSp = 0, wordSp = 0, hscale = 1, rise = 0, leading = 0, tmode = 0;
+    var tm = [1, 0, 0, 1, 0, 0], tx = 0, ty = 0, lx = 0, ly = 0;
+    var lineW = 1, pending = null;
+
+    function parsePath(ops, co) {
+      var subs = [], cur = null, j = 0, i;
+      function P(x, y) { return apply(ctm, x, y); }
+      for (i = 0; i < ops.length; i++) {
+        var op = ops[i];
+        if (op === OPS.moveTo) { cur = { pts: [P(co[j], co[j + 1])], curve: false, closed: false, rect: false }; subs.push(cur); j += 2; }
+        else if (op === OPS.lineTo) { if (!cur) { cur = { pts: [], curve: false, closed: false, rect: false }; subs.push(cur); } cur.pts.push(P(co[j], co[j + 1])); j += 2; }
+        else if (op === OPS.curveTo) { if (!cur) { cur = { pts: [], curve: false, closed: false, rect: false }; subs.push(cur); } cur.pts.push(P(co[j], co[j + 1]), P(co[j + 2], co[j + 3]), P(co[j + 4], co[j + 5])); cur.curve = true; j += 6; }
+        else if (op === OPS.curveTo2 || op === OPS.curveTo3) { if (!cur) { cur = { pts: [], curve: false, closed: false, rect: false }; subs.push(cur); } cur.pts.push(P(co[j], co[j + 1]), P(co[j + 2], co[j + 3])); cur.curve = true; j += 4; }
+        else if (op === OPS.rectangle) {
+          var x = co[j], y = co[j + 1], w = co[j + 2], h = co[j + 3]; j += 4;
+          cur = { pts: [P(x, y), P(x + w, y), P(x + w, y + h), P(x, y + h)], curve: false, closed: true, rect: true };
+          subs.push(cur);
+        }
+        else if (op === OPS.closePath) { if (cur) cur.closed = true; }
+      }
+      return subs;
+    }
+    function bbox(pts) {
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (var i = 0; i < pts.length; i++) { var p = pts[i]; if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+      return [x0, y0, x1, y1];
+    }
+    function scaleOf(m) { return Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) || 1; }
+    function paint(stroke, fill) {
+      if (!pending) return;
+      var lw = lineW * scaleOf(ctm);
+      pending.forEach(function (s) {
+        var b = bbox(s.pts);
+        if (s.curve) {
+          if (b[2] - b[0] > 1 || b[3] - b[1] > 1) curves.push({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] });
+          return;
+        }
+        if (stroke) {
+          var n = s.pts.length;
+          for (var k = 0; k < n - 1 + (s.closed ? 1 : 0); k++) {
+            var a = s.pts[k], c = s.pts[(k + 1) % n];
+            var dx = c[0] - a[0], dy = c[1] - a[1];
+            if (Math.abs(dy) < 0.05 && Math.abs(dx) > 0.5) hsegs.push({ y: (a[1] + c[1]) / 2, x0: Math.min(a[0], c[0]), x1: Math.max(a[0], c[0]), lw: lw });
+            else if (Math.abs(dx) < 0.05 && Math.abs(dy) > 0.5) vsegs.push({ x: (a[0] + c[0]) / 2, y0: Math.min(a[1], c[1]), y1: Math.max(a[1], c[1]), lw: lw });
+          }
+        }
+        if (fill) {
+          var pts = s.pts.length;
+          var boxy = pts >= 4 && pts <= 5;
+          if (boxy) {
+            var tol = 0.05;
+            for (var q = 0; q < pts; q++) {
+              var onx = Math.abs(s.pts[q][0] - b[0]) < tol || Math.abs(s.pts[q][0] - b[2]) < tol;
+              var ony = Math.abs(s.pts[q][1] - b[1]) < tol || Math.abs(s.pts[q][1] - b[3]) < tol;
+              if (!(onx && ony)) { boxy = false; break; }
+            }
+          }
+          if (boxy) {
+            var w = b[2] - b[0], h = b[3] - b[1];
+            if (h < w && h < 6 && w > 1) hsegs.push({ y: (b[1] + b[3]) / 2, x0: b[0], x1: b[2], lw: h });
+            else if (w <= h && w < 6 && h > 1) vsegs.push({ x: (b[0] + b[2]) / 2, y0: b[1], y1: b[3], lw: w });
+          }
+        }
+      });
+    }
+    function moveText(x, y) { lx += x; ly += y; tx = lx; ty = ly; }
+
+    for (var i = 0; i < fnA.length; i++) {
+      var f = fnA[i], a = arA[i];
+      switch (f) {
+        case OPS.save: stack.push(ctm.slice()); break;
+        case OPS.restore: if (stack.length) ctm = stack.pop(); break;
+        case OPS.transform: ctm = mult(a, ctm); break;
+        case OPS.paintFormXObjectBegin: stack.push(ctm.slice()); if (a && a[0]) ctm = mult(a[0], ctm); break;
+        case OPS.paintFormXObjectEnd: if (stack.length) ctm = stack.pop(); break;
+        case OPS.setLineWidth: lineW = a[0]; break;
+        case OPS.setGState:
+          if (a && a[0]) a[0].forEach(function (kv) { if (kv[0] === 'LW') lineW = kv[1]; });
+          break;
+        case OPS.beginText: tm = [1, 0, 0, 1, 0, 0]; tx = ty = lx = ly = 0; break;
+        case OPS.setCharSpacing: charSp = a[0]; break;
+        case OPS.setWordSpacing: wordSp = a[0]; break;
+        case OPS.setHScale: hscale = a[0] / 100; break;
+        case OPS.setLeading: leading = -a[0]; break;
+        case OPS.setFont: fid = a[0]; fsize = a[1]; break;
+        case OPS.setTextRenderingMode: tmode = a[0]; break;
+        case OPS.setTextRise: rise = a[0]; break;
+        case OPS.moveText: moveText(a[0], a[1]); break;
+        case OPS.setLeadingMoveText: leading = -a[1]; moveText(a[0], a[1]); break;
+        case OPS.nextLine: moveText(0, leading); break;
+        case OPS.setTextMatrix: tm = [a[0], a[1], a[2], a[3], a[4], a[5]]; tx = ty = lx = ly = 0; break;
+        case OPS.showText: {
+          if (fid === null) break;
+          var fi = fontInfo(fid), T = mult(tm, ctm), sc = Math.sqrt(Math.abs(T[0] * T[3] - T[1] * T[2])) || 1;
+          var xl = 0, list = a[0] || [];
+          for (var g = 0; g < list.length; g++) {
+            var gl = list[g];
+            if (gl === null || gl === undefined) continue;
+            if (typeof gl === 'number') { xl -= gl * fsize / 1000; continue; }
+            var adv = (gl.width || 0) * fsize * fi.fm;
+            if (tmode !== 3 && !(gl.isSpace && (!gl.unicode || gl.unicode === ' '))) {
+              var uni = gl.unicode, cp = uni ? uni.codePointAt(0) : 0, k;
+              if (uni && cp >= 0x20 && !(cp >= 0x7F && cp < 0xA0)) k = 'u:' + hex4(cp);
+              else k = 'c:' + gl.originalCharCode;
+              var pos = apply(T, (tx + xl * hscale) , ty + rise);
+              glyphs.push({ f: fi.name, k: k, x: pos[0], y: pos[1], w: Math.abs(adv * hscale * sc), s: Math.abs(fsize * sc) });
+            }
+            xl += adv + charSp + (gl.isSpace ? wordSp : 0);
+          }
+          tx += xl * hscale;
+          break;
+        }
+        case OPS.constructPath: pending = parsePath(a[0], a[1]); break;
+        case OPS.stroke: case OPS.closeStroke: paint(true, false); pending = null; break;
+        case OPS.fill: case OPS.eoFill: paint(false, true); pending = null; break;
+        case OPS.fillStroke: case OPS.eoFillStroke: case OPS.closeFillStroke: case OPS.closeEOFillStroke: paint(true, true); pending = null; break;
+        case OPS.endPath: pending = null; break;
+        default: break;
+      }
+    }
+    var view = page.view;
+    return { width: view[2] - view[0], height: view[3] - view[1], glyphs: glyphs, hsegs: hsegs, vsegs: vsegs, curves: curves };
+  }
+
+  /* ---------- stage 2: detection ---------- */
+  function findStaves(hsegs) {
+    var segs = hsegs.filter(function (s) { return s.lw < 2.5 && (s.x1 - s.x0) >= 15; });
+    segs.sort(function (a, b) { return a.y - b.y || a.x0 - b.x0; });
+    var groups = [], i, cur = null;
+    for (i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (cur && Math.abs(s.y - cur.y) <= 0.2) cur.list.push(s);
+      else { cur = { y: s.y, list: [s] }; groups.push(cur); }
+    }
+    var ivs = [];
+    groups.forEach(function (g) {
+      g.list.sort(function (a, b) { return a.x0 - b.x0; });
+      var m = null;
+      g.list.forEach(function (s) {
+        if (m && s.x0 - m.x1 <= 4) { if (s.x1 > m.x1) m.x1 = s.x1; }
+        else { m = { y: g.y, x0: s.x0, x1: s.x1, used: false }; ivs.push(m); }
+      });
+    });
+    ivs = ivs.filter(function (v) { return v.x1 - v.x0 >= 30; });
+    ivs.sort(function (a, b) { return a.y - b.y || a.x0 - b.x0; });
+    function overlaps(a, b) {
+      var ov = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+      return ov > 0.5 * Math.min(a.x1 - a.x0, b.x1 - b.x0);
+    }
+    var staves = [], n = ivs.length;
+    for (i = 0; i < n; i++) {
+      var A = ivs[i];
+      if (A.used) continue;
+      for (var j = i + 1; j < n; j++) {
+        var B = ivs[j], sp = B.y - A.y;
+        if (sp < 2.5) continue;
+        if (sp > 25) break;
+        if (B.used || !overlaps(A, B)) continue;
+        var tol = Math.max(0.3, 0.05 * sp), found = [A, B], ok = true;
+        for (var k = 2; k <= 4 && ok; k++) {
+          var want = A.y + k * sp, hit = null;
+          for (var q = j + 1; q < n; q++) {
+            if (ivs[q].y > want + tol) break;
+            if (Math.abs(ivs[q].y - want) <= tol && !ivs[q].used && overlaps(A, ivs[q])) { hit = ivs[q]; break; }
+          }
+          if (hit) found.push(hit); else ok = false;
+        }
+        if (ok) {
+          found.forEach(function (v) { v.used = true; });
+          var x0 = Math.min.apply(null, found.map(function (v) { return v.x0; }));
+          var x1 = Math.max.apply(null, found.map(function (v) { return v.x1; }));
+          var ys = found.map(function (v) { return v.y; });
+          var yb = ys[0], yt = ys[4];
+          staves.push({ x0: x0, x1: x1, yb: yb, yt: yt, sp: (yt - yb) / 4 });
+          break;
+        }
+      }
+    }
+    staves.sort(function (a, b) { return (b.yb - a.yb) || (a.x0 - b.x0); });
+    staves.forEach(function (s, idx) { s.idx = idx; s.key = Math.round(s.yb) + ':' + Math.round(s.x0); });
+    return staves;
+  }
+
+  function resolveRole(g, userMap) {
+    var m = userMap && (userMap[g.f + '|' + g.k] || userMap['*|' + g.k]);
+    if (m) return m.role === 'ignore' ? null : { role: m.role, dy: m.dy || 0, user: true };
+    var r = defaultRole(g.k);
+    return r ? { role: r, dy: 0, user: false } : null;
+  }
+
+  function circularOffset(res) {
+    if (res.length < 6) return 0;
+    var sx = 0, sy = 0;
+    res.forEach(function (r) { sx += Math.cos(2 * Math.PI * r); sy += Math.sin(2 * Math.PI * r); });
+    sx /= res.length; sy /= res.length;
+    if (Math.sqrt(sx * sx + sy * sy) < 0.75) return 0;
+    return Math.atan2(sy, sx) / (2 * Math.PI);
+  }
+
+  function clefState(role, rawP) {
+    var allowed, base, def, kind;
+    if (role === 'clefG') { allowed = [0, 2]; base = 32; def = 2; kind = 'G'; }
+    else if (role === 'clefF') { allowed = [4, 6, 8]; base = 24; def = 6; kind = 'F'; }
+    else { allowed = [0, 2, 4, 6, 8]; base = 28; def = 4; kind = 'C'; }
+    var best = def, bd = Infinity;
+    allowed.forEach(function (p) { var d = Math.abs(p - rawP); if (d < bd - 1e-9 || (Math.abs(d - bd) < 1e-9 && p === def)) { bd = d; best = p; } });
+    return { kind: kind, refP: best, base: base, name: CLEF_NAMES[kind + best] || (kind + ' clef') };
+  }
+  var CLEF_PRESETS = {
+    treble: { kind: 'G', refP: 2, base: 32, name: 'treble' },
+    bass: { kind: 'F', refP: 6, base: 24, name: 'bass' },
+    alto: { kind: 'C', refP: 4, base: 28, name: 'alto' },
+    tenor: { kind: 'C', refP: 6, base: 28, name: 'tenor' }
+  };
+  function keyAltFromCount(n) {
+    var alt = {};
+    NOTE_NAMES.forEach(function (l) { alt[l] = 0; });
+    if (n > 0) SHARP_ORDER.slice(0, n).forEach(function (l) { alt[l] = 1; });
+    if (n < 0) FLAT_ORDER.slice(0, -n).forEach(function (l) { alt[l] = -1; });
+    return alt;
+  }
+  function keyLabel(n) { return n === 0 ? 'no sharps or flats' : (n > 0 ? n + ' sharp' + (n > 1 ? 's' : '') : (-n) + ' flat' + (n < -1 ? 's' : '')); }
+  function letterOf(clef, p) { return NOTE_NAMES[mod(clef.base + (p - clef.refP), 7)]; }
+
+  function accSymbol(alt) { return alt === 1 ? '♯' : alt === -1 ? '♭' : alt === 0 ? '♮' : alt === 2 ? '𝄪' : alt === -2 ? '𝄫' : '+'; }
+  function noteName(letter, alt, octave) {
+    var a = alt === 1 ? '♯' : alt === -1 ? '♭' : alt === 2 ? '𝄪' : alt === -2 ? '𝄫' : (alt === 0 ? '' : '±');
+    return letter + a + octave;
+  }
+
+  function detectPage(prims, cfg) {
+    cfg = cfg || {};
+    var userMap = cfg.userMap || {}, overrides = cfg.overrides || {}, pageIndex = cfg.pageIndex || 0;
+    var staves = findStaves(prims.hsegs);
+    var out = { staves: [], notes: [], orphans: [], classes: {}, glyphBoxes: [], stats: { notes: 0 } };
+    if (!staves.length) return out;
+    var S = staves.map(function (st) {
+      return { st: st, glyphs: [], bars: [], overrideKey: pageIndex + ':' + st.key };
+    });
+
+    /* resolve roles, assign glyphs to staves */
+    prims.glyphs.forEach(function (g) {
+      var best = -1, bd = Infinity, i;
+      for (i = 0; i < S.length; i++) {
+        var st = S[i].st;
+        if (g.x < st.x0 - 6 * st.sp || g.x > st.x1 + 2 * st.sp) continue;
+        var d = g.y < st.yb ? st.yb - g.y : (g.y > st.yt ? g.y - st.yt : 0);
+        if (d < bd) { bd = d; best = i; }
+      }
+      if (best < 0) return;
+      var stb = S[best].st;
+      var inBand = bd <= 0.6 * stb.sp && g.x >= stb.x0 - 2 * stb.sp && g.x <= stb.x1;
+      var ck = g.f + '|' + g.k;
+      if (inBand) {
+        var c = out.classes[ck] || (out.classes[ck] = { f: g.f, k: g.k, n: 0, samples: [] });
+        c.n++;
+        if (c.samples.length < 3) c.samples.push({ x: g.x, y: g.y, w: g.w, sp: stb.sp, s: g.s });
+      }
+      var rr = resolveRole(g, userMap);
+      if (!rr) return;
+      if (!rr.user && !isPUA(g.k) && g.s < 2.5 * stb.sp) return;
+      if (bd > 9 * stb.sp) return;
+      S[best].glyphs.push({ g: g, role: rr.role, dy: rr.dy, user: rr.user, raw: (g.y - stb.yb) / (stb.sp / 2) });
+    });
+
+    /* per-class vertical calibration for grid-aligned symbols */
+    var resByClass = {};
+    S.forEach(function (s) {
+      s.glyphs.forEach(function (e) {
+        if (e.role === 'notehead' || ACC_ROLES.indexOf(e.role) >= 0) {
+          var ck = e.g.f + '|' + e.g.k;
+          (resByClass[ck] = resByClass[ck] || []).push(e.raw - Math.round(e.raw));
+        }
+      });
+    });
+    var offByClass = {};
+    Object.keys(resByClass).forEach(function (ck) { offByClass[ck] = circularOffset(resByClass[ck]); });
+
+    S.forEach(function (s) {
+      var st = s.st, sp = st.sp, ov = overrides[s.overrideKey] || {};
+      var yAt = function (p) { return st.yb + p * sp / 2; };
+      var events = [], notes = [], accs = [], parens = [];
+      s.glyphs.forEach(function (e) {
+        var g = e.g, ck = g.f + '|' + g.k;
+        var p = Math.round(e.raw - (offByClass[ck] || 0)) + e.dy;
+        var ev = { x: g.x, w: (g.w > 0.2 * sp && g.w < 4 * sp) ? g.w : 1.2 * sp, p: p, role: e.role, raw: e.raw + e.dy, g: g };
+        if (e.role === 'notehead') { ev.type = 'note'; notes.push(ev); events.push(ev); }
+        else if (ACC_ROLES.indexOf(e.role) >= 0) { ev.type = 'acc'; ev.alt = ACC_ALT[e.role]; accs.push(ev); events.push(ev); }
+        else if (e.role === 'paren') { ev.type = 'paren'; parens.push(ev); }
+        else if (e.role === 'clefG' || e.role === 'clefF' || e.role === 'clefC') { ev.type = 'clef'; events.push(ev); }
+        else if (e.role === 'rest' || e.role === 'timesig') { ev.type = 'term'; events.push(ev); }
+        out.glyphBoxes.push({ role: e.role, x: g.x, y: yAt(p), w: ev.w, sp: sp, staff: st.idx });
+      });
+
+      /* barlines */
+      var cand = prims.vsegs.filter(function (v) {
+        return v.lw <= 0.8 * sp && v.x >= st.x0 - 0.5 * sp && v.x <= st.x1 + 0.5 * sp &&
+          v.y0 <= st.yb + 0.25 * sp && v.y1 >= st.yt - 0.25 * sp;
+      }).filter(function (v) {
+        return !notes.some(function (n) {
+          var nyc = yAt(n.p);
+          return (Math.abs(v.x - n.x) < 0.22 * sp || Math.abs(v.x - (n.x + n.w)) < 0.22 * sp) && nyc >= v.y0 - 0.3 * sp && nyc <= v.y1 + 0.3 * sp;
+        });
+      }).map(function (v) { return v.x; }).sort(function (a, b) { return a - b; });
+      var bars = [];
+      cand.forEach(function (x) { if (!bars.length || x - bars[bars.length - 1] > 0.8 * sp) bars.push(x); });
+      bars.forEach(function (x) { events.push({ type: 'bar', x: x, w: 0 }); });
+
+      /* right edge of each accidental, extended over a closing parenthesis */
+      accs.forEach(function (a) {
+        a.edge = a.x + a.w;
+        parens.forEach(function (q) {
+          if (q.x >= a.x - 0.1 * sp && q.x <= a.x + a.w + 1.2 * sp && Math.abs(q.p - a.p) <= 3) a.edge = Math.max(a.edge, q.x + q.w);
+        });
+      });
+      var order = { bar: 0, clef: 1, acc: 2, term: 3, note: 4 };
+      events.sort(function (a, b) { return a.x - b.x || order[a.type] - order[b.type]; });
+
+      /* pass 1: clefs and key signatures */
+      var clefOv = ov.clef && ov.clef !== 'auto' ? CLEF_PRESETS[ov.clef] : null;
+      var clef = clefOv || null, clefSource = clefOv ? 'override' : null;
+      var clefTimeline = [], keyEvents = [], autoClefName = null;
+      var hdr = { open: true, cands: [], refX: st.x0 - 2 * sp, wide: true };
+      var firstClefSeen = false;
+
+      function parseRun(run, clefTry) {
+        var i = 0, nat = 0;
+        while (i < run.length && run[i].role === 'natural') { nat++; i++; }
+        var type = null, k = 0, order_ = null;
+        if (i < run.length && (run[i].role === 'sharp' || run[i].role === 'flat')) {
+          type = run[i].role; order_ = type === 'sharp' ? SHARP_ORDER : FLAT_ORDER;
+          while (i + k < run.length && run[i + k].role === type && k < 7 && letterOf(clefTry, run[i + k].p) === order_[k]) k++;
+        }
+        return { nat: nat, type: type, k: k, used: nat + k };
+      }
+      function closeHeader(closer) {
+        var cands = hdr.cands; hdr.cands = [];
+        if (!cands.length) return;
+        if (cands[0].x - hdr.refX > (hdr.wide ? 14 : 4) * sp) return;
+        var run = [cands[0]], i;
+        for (i = 1; i < cands.length; i++) {
+          var prev = run[run.length - 1];
+          if (cands[i].x - (prev.x + prev.w) <= 2.2 * sp) run.push(cands[i]); else break;
+        }
+        /* drop trailing accidentals that belong to a following note */
+        var follow = notes.filter(function (n) { return n.x >= run[run.length - 1].x; });
+        while (run.length) {
+          var last = run[run.length - 1];
+          var attached = follow.some(function (n) { var d = n.x - last.edge; return n.p === last.p && d >= -0.3 * sp && d <= 0.8 * sp; });
+          if (attached) run.pop(); else break;
+        }
+        if (!run.length) return;
+        var useClef = clef, res = null;
+        if (useClef) res = parseRun(run, useClef);
+        else {
+          var tries = ['treble', 'bass', 'alto', 'tenor'];
+          for (var t = 0; t < tries.length; t++) {
+            var r = parseRun(run, CLEF_PRESETS[tries[t]]);
+            if (r.k >= 1 && (!res || r.k > res.k)) { res = r; useClef = CLEF_PRESETS[tries[t]]; }
+          }
+          if (res && res.k >= 1) { clef = useClef; clefSource = 'inferred'; if (!autoClefName) autoClefName = useClef.name; clefTimeline.push({ x: run[0].x - 0.01, clef: clef }); }
+          else res = null;
+        }
+        if (!res || (res.k === 0 && res.nat === 0)) return;
+        var used = run.slice(0, res.used);
+        used.forEach(function (a) { a.isKey = true; });
+        var count = res.type === 'flat' ? -res.k : res.k;
+        var lastUsed = used[used.length - 1];
+        keyEvents.push({ type: 'key', x: lastUsed.x + lastUsed.w, count: res.k === 0 ? 0 : count });
+      }
+      events.forEach(function (ev) {
+        if (ev.type === 'bar') { closeHeader(ev); hdr = { open: true, cands: [], refX: ev.x, wide: !firstClefSeen && ev.x - st.x0 < 2 * sp }; }
+        else if (ev.type === 'clef') {
+          closeHeader(ev);
+          if (!autoClefName) autoClefName = clefState(ev.role, ev.raw).name;
+          if (!clefOv) {
+            clef = clefState(ev.role, ev.raw);
+            clefSource = 'glyph';
+            clefTimeline.push({ x: ev.x, clef: clef });
+          }
+          firstClefSeen = true;
+          hdr = { open: true, cands: [], refX: ev.x + ev.w };
+        }
+        else if (ev.type === 'acc') { if (hdr.open) hdr.cands.push(ev); }
+        else { closeHeader(ev); hdr.open = false; }
+      });
+      closeHeader(null);
+      if (clefOv) clefTimeline = [{ x: -Infinity, clef: clefOv }];
+      else if (!clefTimeline.length) { clef = CLEF_PRESETS.treble; clefSource = 'default'; clefTimeline = [{ x: -Infinity, clef: clef }]; }
+      else clefTimeline.unshift({ x: -Infinity, clef: clefTimeline[0].clef });
+      function clefAt(x) { var c = clefTimeline[0].clef; for (var i = 0; i < clefTimeline.length; i++) if (clefTimeline[i].x <= x + 0.001) c = clefTimeline[i].clef; return c; }
+
+      /* pass 2: attach remaining accidentals to noteheads */
+      var loose = accs.filter(function (a) { return !a.isKey; });
+      var pairs = [];
+      loose.forEach(function (a) {
+        notes.forEach(function (n) {
+          if (n.p !== a.p) return;
+          var d = n.x - a.edge;
+          if (d >= -0.4 * sp && d <= 4.0 * sp) pairs.push({ a: a, n: n, d: d });
+        });
+      });
+      pairs.sort(function (p, q) { return p.d - q.d; });
+      pairs.forEach(function (pr) {
+        if (pr.a.note || pr.n.acc) return;
+        pr.a.note = pr.n; pr.n.acc = pr.a;
+      });
+      loose.forEach(function (a) {
+        if (a.note) {
+          a.paren = parens.some(function (q) { return q.x >= a.x - 0.9 * sp && q.x <= a.x + a.w + 0.9 * sp && Math.abs(q.p - a.p) <= 3; });
+        } else {
+          var yy = yAt(a.p);
+          if (yy >= st.yb - 2 * sp && yy <= st.yt + 2 * sp)
+            out.orphans.push({ staff: st.idx, x0: a.x, x1: a.x + a.w, y0: yy - 1.3 * sp, y1: yy + 1.3 * sp, role: a.role });
+        }
+      });
+
+      /* pass 3: walk left to right through each measure */
+      var overrideKey = ov.key === 'auto' || ov.key === undefined ? null : Number(ov.key);
+      var timeline = [];
+      bars.forEach(function (x) { timeline.push({ type: 'bar', x: x }); });
+      keyEvents.forEach(function (k) { timeline.push(k); });
+      notes.forEach(function (n) { timeline.push({ type: 'note', x: n.x, n: n }); });
+      var ord3 = { bar: 0, key: 1, note: 2 };
+      timeline.sort(function (a, b) {
+        if (a.type === 'note' && b.type === 'note') {
+          if (Math.abs(a.x - b.x) < 0.3 * sp) return (b.n.acc ? 1 : 0) - (a.n.acc ? 1 : 0);
+          return a.x - b.x;
+        }
+        return a.x - b.x || ord3[a.type] - ord3[b.type];
+      });
+      var keyCount = overrideKey !== null ? overrideKey : 0, firstKey = null;
+      if (overrideKey === null && keyEvents.length) firstKey = keyEvents[0].count;
+      var keyAlt = keyAltFromCount(keyCount);
+      var meas = {}, prevNotes = {}, measureNo = 1;
+      function tieBetween(P, N) {
+        var yc = yAt(N.p);
+        return prims.curves.some(function (c) {
+          return c.x0 >= P.x - 0.4 * sp && c.x0 <= P.x + P.w + 1.2 * sp && c.x1 >= N.x - 1.2 * sp && c.x1 <= N.x + N.w + 0.4 * sp &&
+            (c.y1 - c.y0) <= 1.8 * sp && Math.abs((c.y0 + c.y1) / 2 - yc) <= 2.0 * sp;
+        });
+      }
+      timeline.forEach(function (t) {
+        if (t.type === 'bar') { meas = {}; measureNo++; return; }
+        if (t.type === 'key') {
+          if (overrideKey === null) { keyCount = t.count; keyAlt = keyAltFromCount(keyCount); }
+          return;
+        }
+        var n = t.n, c = clefAt(n.x);
+        var dia = c.base + (n.p - c.refP), letter = NOTE_NAMES[mod(dia, 7)], octave = Math.floor(dia / 7);
+        var alt, cat = null, via = null, kA = keyAlt[letter];
+        var has = Object.prototype.hasOwnProperty.call(meas, dia);
+        if (n.acc) {
+          alt = n.acc.alt;
+          var before = has ? meas[dia] : kA;
+          var redundant = before === alt;
+          if (n.acc.role === 'natural') cat = redundant ? 'cautionary' : 'natural';
+          else cat = (redundant || n.acc.paren) ? 'cautionary' : 'explicit';
+          meas[dia] = alt;
+        } else if (has) {
+          alt = meas[dia];
+          cat = alt !== 0 ? (alt === kA ? 'keysig' : 'carried') : null;
+        } else {
+          var prev = prevNotes[dia];
+          if (prev && prev.alt !== kA && prev.alt !== undefined && tieBetween(prev.n, n)) { alt = prev.alt; meas[dia] = alt; cat = 'carried'; via = 'tie'; }
+          else { alt = kA; cat = alt !== 0 ? 'keysig' : null; }
+        }
+        prevNotes[dia] = { alt: alt, n: n };
+        var yc = yAt(n.p);
+        var rec = {
+          id: pageIndex + ':' + Math.round(n.x * 10) + ':' + Math.round(yc * 10),
+          page: pageIndex, staff: st.idx, measure: measureNo,
+          letter: letter, octave: octave, alt: alt, name: noteName(letter, alt, octave),
+          cat: cat, via: via,
+          rect: [n.x - 0.12 * sp, yc - 0.62 * sp, n.x + n.w + 0.12 * sp, yc + 0.62 * sp],
+          acc: null
+        };
+        if (n.acc) {
+          var ay = yAt(n.acc.p) + (n.acc.role === 'flat' || n.acc.role === 'dflat' ? 0.35 * sp : 0);
+          rec.acc = { role: n.acc.role, paren: !!n.acc.paren, rect: [n.acc.x - 0.1 * sp, ay - 1.3 * sp, n.acc.x + n.acc.w + 0.1 * sp, ay + 1.3 * sp] };
+        }
+        out.notes.push(rec);
+      });
+
+      var keyShown = overrideKey !== null ? overrideKey : (firstKey !== null ? firstKey : 0);
+      out.staves.push({
+        idx: st.idx, key: st.key, overrideKey: s.overrideKey,
+        rect: [st.x0, st.yb, st.x1, st.yt], sp: sp,
+        clef: { name: (clefOv ? clefOv.name : (clefTimeline[clefTimeline.length - 1].clef.name)), source: clefSource },
+        keyCount: keyShown, autoClef: autoClefName, autoKeyCount: keyEvents.length ? keyEvents[0].count : 0, keyLabel: keyLabel(keyShown), keySource: overrideKey !== null ? 'override' : (firstKey !== null ? 'detected' : 'none'),
+        notes: notes.length, bars: bars.length
+      });
+    });
+    out.stats.notes = out.notes.length;
+    return out;
+  }
+
+  function summarize(results) {
+    var counts = {}, total = 0, orphans = 0;
+    CAT_LIST.forEach(function (c) { counts[c] = 0; });
+    results.forEach(function (r) {
+      if (!r) return;
+      r.notes.forEach(function (n) { total++; if (n.cat) counts[n.cat]++; });
+      orphans += r.orphans.length;
+    });
+    return { counts: counts, notes: total, orphans: orphans };
+  }
+
+  /* ---------- annotations (pdf-lib) ---------- */
+  var TAG = 'accHL:';
+  var AUTHOR = 'Accidental Highlighter';
+
+  function hexToRgb(h) {
+    h = String(h).replace('#', '');
+    if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+    return [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255];
+  }
+  function round3(v) { return Math.round(v * 1000) / 1000; }
+
+  async function stripHighlights(PDFLib, bytes) {
+    var doc = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    var removed = removeOurs(PDFLib, doc);
+    return { doc: doc, removed: removed };
+  }
+  function removeOurs(PDFLib, doc) {
+    var PDFName = PDFLib.PDFName, PDFString = PDFLib.PDFString, PDFHexString = PDFLib.PDFHexString, PDFRef = PDFLib.PDFRef, removed = 0;
+    doc.getPages().forEach(function (page) {
+      var annots = page.node.Annots();
+      if (!annots) return;
+      for (var i = annots.size() - 1; i >= 0; i--) {
+        var raw = annots.get(i), d = annots.lookup(i);
+        if (!d || !d.get) continue;
+        var nm = d.get(PDFName.of('NM'));
+        var s = nm && (nm.decodeText ? nm.decodeText() : (nm.asString ? nm.asString() : ''));
+        if (s && s.indexOf(TAG) === 0) {
+          annots.remove(i);
+          if (raw instanceof PDFRef) {
+            var ap = d.get(PDFName.of('AP'));
+            if (ap && ap.get) { var n = ap.get(PDFName.of('N')); if (n instanceof PDFRef) doc.context.delete(n); }
+            doc.context.delete(raw);
+          }
+          removed++;
+        }
+      }
+    });
+    if (removed) {
+      var maxN = 0;
+      doc.context.enumerateIndirectObjects().forEach(function (pair) { if (pair[0].objectNumber > maxN) maxN = pair[0].objectNumber; });
+      doc.context.largestObjectNumber = maxN;
+    }
+    return removed;
+  }
+
+  /* items: [{page, id, cat, label, rects:[[x0,y0,x1,y1],...]}] */
+  async function writeHighlights(PDFLib, bytes, items, opts) {
+    opts = opts || {};
+    var PDFDocument = PDFLib.PDFDocument, PDFString = PDFLib.PDFString;
+    var doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    removeOurs(PDFLib, doc);
+    var ctx = doc.context, pages = doc.getPages();
+    var opacity = opts.opacity == null ? 0.55 : opts.opacity;
+    var gsCache = {};
+    function gsRef(op) {
+      var k = String(op);
+      if (!gsCache[k]) gsCache[k] = ctx.register(ctx.obj({ Type: 'ExtGState', BM: 'Multiply', ca: op, AIS: false }));
+      return gsCache[k];
+    }
+    var written = 0;
+    items.forEach(function (it) {
+      var page = pages[it.page];
+      if (!page || !it.rects.length) return;
+      var rgb = hexToRgb((opts.colors && opts.colors[it.cat]) || '#FFD60A');
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, quads = [], body = '/GS0 gs ' + rgb.map(round3).join(' ') + ' rg\n';
+      it.rects.forEach(function (r) {
+        x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]);
+        quads.push(r[0], r[3], r[2], r[3], r[0], r[1], r[2], r[1]);
+        body += round3(r[0]) + ' ' + round3(r[1]) + ' ' + round3(r[2] - r[0]) + ' ' + round3(r[3] - r[1]) + ' re f\n';
+      });
+      var ap = ctx.register(ctx.stream(body, {
+        Type: 'XObject', Subtype: 'Form', BBox: [x0, y0, x1, y1],
+        Resources: ctx.obj({ ExtGState: ctx.obj({ GS0: gsRef(opacity) }) })
+      }));
+      var annot = ctx.obj({
+        Type: 'Annot', Subtype: 'Highlight',
+        Rect: [x0, y0, x1, y1], QuadPoints: quads.map(round3),
+        C: rgb.map(round3), CA: opacity, F: 4,
+        NM: PDFString.of(TAG + it.cat + ':' + it.id),
+        T: PDFString.of(AUTHOR), Subj: PDFString.of('Accidental'),
+        Contents: PDFString.of(it.label || ''),
+        AP: ctx.obj({ N: ap })
+      });
+      page.node.addAnnot(ctx.register(annot));
+      written++;
+    });
+    var out = await doc.save({ useObjectStreams: false });
+    return { bytes: out, written: written };
+  }
+
+  async function cleanBytes(PDFLib, bytes) {
+    var r = await stripHighlights(PDFLib, bytes);
+    return { bytes: await r.doc.save({ useObjectStreams: false }), removed: r.removed };
+  }
+
+  return {
+    extractPage: extractPage, detectPage: detectPage, findStaves: findStaves, summarize: summarize,
+    writeHighlights: writeHighlights, cleanBytes: cleanBytes, defaultRole: defaultRole,
+    ROLES: ROLES, CAT_LIST: CAT_LIST, ACC_ROLES: ACC_ROLES, TAG: TAG, AUTHOR: AUTHOR,
+    keyLabel: keyLabel, accSymbol: accSymbol, noteName: noteName
+  };
+});
+
+</script>
+<script>
+(function () {
+  'use strict';
+  var E = window.AccEngine, pdfjsLib = window.pdfjsLib, PDFLib = window.PDFLib;
+  var SAMPLE_B64 = 'JVBERi0xLjcKJYGBgYEKCjEgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFsgNyAwIFIgXQovQ291bnQgMQo+PgplbmRvYmoKCjIgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDEgMCBSCj4+CmVuZG9iagoKMyAwIG9iago8PAovUHJvZHVjZXIgPEZFRkYwMDcwMDA2NDAwNjYwMDJEMDA2QzAwNjkwMDYyMDAyMDAwMjgwMDY4MDA3NDAwNzQwMDcwMDA3MzAwM0EwMDJGMDAyRjAwNjcwMDY5MDA3NDAwNjgwMDc1MDA2MjAwMkUwMDYzMDA2RjAwNkQwMDJGMDA0ODAwNkYwMDcwMDA2NDAwNjkwMDZFMDA2NzAwMkYwMDcwMDA2NDAwNjYwMDJEMDA2QzAwNjkwMDYyMDAyOT4KL01vZERhdGUgKEQ6MjAyNjEwMTAyMTExNTdaKQovQ3JlYXRvciA8RkVGRjAwNzAwMDY0MDA2NjAwMkQwMDZDMDA2OTAwNjIwMDIwMDAyODAwNjgwMDc0MDA3NDAwNzAwMDczMDAzQTAwMkYwMDJGMDA2NzAwNjkwMDc0MDA2ODAwNzUwMDYyMDAyRTAwNjMwMDZGMDA2RDAwMkYwMDQ4MDA2RjAwNzAwMDY0MDA2OTAwNkUwMDY3MDAyRjAwNzAwMDY0MDA2NjAwMkQwMDZDMDA2OTAwNjIwMDI5PgovQ3JlYXRpb25EYXRlIChEOjIwMjYxMDEwMjExMTU3WikKPj4KZW5kb2JqCgo0IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMAovQmFzZUZvbnQgL0JyYXZ1cmEtNjk0MAovRW5jb2RpbmcgL0lkZW50aXR5LUgKL0Rlc2NlbmRhbnRGb250cyBbIDExIDAgUiBdCi9Ub1VuaWNvZGUgMTIgMCBSCj4+CmVuZG9iagoKNSAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTEKL0Jhc2VGb250IC9IZWx2ZXRpY2EKL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcKPj4KZW5kb2JqCgo2IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYS1Cb2xkCi9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nCj4+CmVuZG9iagoKNyAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDEgMCBSCi9SZXNvdXJjZXMgPDwKL0ZvbnQgPDwKL0hlbHZldGljYS1Cb2xkLTcwOTg0ODA3ODkgNiAwIFIKL0hlbHZldGljYS05NzQyNjgyNTY4IDUgMCBSCi9IZWx2ZXRpY2EtQm9sZC0yMDAwODA1OTg2IDYgMCBSCi9CcmF2dXJhLTk3NTA0NjkyMDcgNCAwIFIKL0JyYXZ1cmEtNzU3MjUzMzY4NiA0IDAgUgovQnJhdnVyYS04NDUwMTgwMTA3IDQgMCBSCi9CcmF2dXJhLTg2NTk4NzE4NzggNCAwIFIKL0JyYXZ1cmEtNTgyNDY2MjMzOCA0IDAgUgovQnJhdnVyYS0xODQ4NTI0MTc1IDQgMCBSCi9CcmF2dXJhLTc4ODg5MTEwNjMgNCAwIFIKL0JyYXZ1cmEtOTc5MzQ0OTI5IDQgMCBSCi9CcmF2dXJhLTI3MDgxOTk5NTYgNCAwIFIKL0JyYXZ1cmEtNjcwMzY4MjY2NCA0IDAgUgovSGVsdmV0aWNhLTczNTU2OTQ4NyA1IDAgUgovQnJhdnVyYS04Nzg0MDE1NzExIDQgMCBSCi9CcmF2dXJhLTk2NjgzMzM0OTMgNCAwIFIKL0JyYXZ1cmEtMjUwODEyMDQ0IDQgMCBSCi9CcmF2dXJhLTEyNzUzMjI4MzIgNCAwIFIKL0JyYXZ1cmEtNzcyMDk2NjI5NSA0IDAgUgovQnJhdnVyYS00NTI1MDcyNzYyIDQgMCBSCi9IZWx2ZXRpY2EtNTU2Mzg1MzYwNSA1IDAgUgovQnJhdnVyYS00ODY5MDcwOTU5IDQgMCBSCi9CcmF2dXJhLTc5NTk1ODI0ODIgNCAwIFIKL0JyYXZ1cmEtMjE2Mzc5OTMzNyA0IDAgUgovQnJhdnVyYS00ODI0OTkwMjIyIDQgMCBSCi9CcmF2dXJhLTU4NDUwNDc5NjAgNCAwIFIKL0JyYXZ1cmEtNzU5Mjg0MDQ1MCA0IDAgUgovQnJhdnVyYS01Nzg4MzA3ODYgNCAwIFIKL0JyYXZ1cmEtNjYxMTU3ODcwMyA0IDAgUgovSGVsdmV0aWNhLTY4Mzc1OTA3MTMgNSAwIFIKL0JyYXZ1cmEtNjIzNTQ2NzY5MyA0IDAgUgovQnJhdnVyYS0yNjY4MTI0MTY5IDQgMCBSCi9CcmF2dXJhLTExODYwMTA3MjYgNCAwIFIKL0JyYXZ1cmEtODI2ODYxMjAwMiA0IDAgUgovQnJhdnVyYS0xNzMzMDUwMzg0IDQgMCBSCi9CcmF2dXJhLTIxMTQ2NTU2ODggNCAwIFIKL0JyYXZ1cmEtNjE4NjY2NDMwMCA0IDAgUgovQnJhdnVyYS02ODU3ODcwOTM4IDQgMCBSCi9CcmF2dXJhLTk1Mzg2Mjg0MDggNCAwIFIKL0hlbHZldGljYS0xMzE2MDQ3OTM0IDUgMCBSCi9CcmF2dXJhLTc3MzMxMTk1MjkgNCAwIFIKL0JyYXZ1cmEtNzg0NTIwODQzNiA0IDAgUgovQnJhdnVyYS0yNTI1NzM3MTQwIDQgMCBSCi9CcmF2dXJhLTE5MjUxMDU0MSA0IDAgUgovQnJhdnVyYS0zNTI0NTM0MTEgNCAwIFIKL0JyYXZ1cmEtODgzNDc2NDg4MCA0IDAgUgovQnJhdnVyYS03MzEyMjc0NTIyIDQgMCBSCi9CcmF2dXJhLTQ1MzM4Njc2MzMgNCAwIFIKL0JyYXZ1cmEtNDczNDcyNDA1MiA0IDAgUgovQnJhdnVyYS0yNTE0NjI5NjA3IDQgMCBSCi9IZWx2ZXRpY2EtMjkxNzU4NDMzNyA1IDAgUgovQnJhdnVyYS0yNzU5MjA0MDQ4IDQgMCBSCi9CcmF2dXJhLTI1MTUwMTgxODMgNCAwIFIKL0JyYXZ1cmEtMTA5NTExNDgzOCA0IDAgUgovQnJhdnVyYS00NDgyNjY0MTM4IDQgMCBSCi9CcmF2dXJhLTQ4OTk3OTEzMDggNCAwIFIKL0JyYXZ1cmEtNjQ3NTUyNDc4MiA0IDAgUgovSGVsdmV0aWNhLTcyNjQ4MDg0NTMgNSAwIFIKL0JyYXZ1cmEtMzgwMDcxMzkxMyA0IDAgUgovQnJhdnVyYS04OTM3ODg5Nzc4IDQgMCBSCi9CcmF2dXJhLTgyMjI5OTkxNjAgNCAwIFIKL0JyYXZ1cmEtMTkzMDMzNTA3NyA0IDAgUgovQnJhdnVyYS01NTcwMDMwMjgwIDQgMCBSCi9CcmF2dXJhLTI2MDM4MTk2NzkgNCAwIFIKL0JyYXZ1cmEtMjg2Nzk0OTAxMCA0IDAgUgovQnJhdnVyYS00ODg0NTk3NjAzIDQgMCBSCi9CcmF2dXJhLTgwMDIxMDI0NjcgNCAwIFIKL0hlbHZldGljYS03MjMxOTMxMDcwIDUgMCBSCi9CcmF2dXJhLTE1MTg2MjE2ODEgNCAwIFIKL0JyYXZ1cmEtOTA2ODE1NTc4OCA0IDAgUgovQnJhdnVyYS01NDY1MzI1NDM3IDQgMCBSCi9CcmF2dXJhLTIzMzYyNzYyMDMgNCAwIFIKL0JyYXZ1cmEtMjgwNDMxMTI2OSA0IDAgUgovQnJhdnVyYS01MzczOTUzMTc1IDQgMCBSCi9CcmF2dXJhLTE4MzY0NTkwNTYgNCAwIFIKL0JyYXZ1cmEtNzYzNjg5ODE4IDQgMCBSCi9CcmF2dXJhLTIwMTU4NTgwNzMgNCAwIFIKL0hlbHZldGljYS03ODQ1NTk4NzUzIDUgMCBSCi9CcmF2dXJhLTg3MzMxMjkyNDkgNCAwIFIKL0JyYXZ1cmEtMTEzNDYwNzY2MiA0IDAgUgovQnJhdnVyYS0xMjAwNTcyNTU0IDQgMCBSCi9CcmF2dXJhLTI4NzgyNDMzMDggNCAwIFIKL0JyYXZ1cmEtNjQ0NjExMDAxOCA0IDAgUgovQnJhdnVyYS05MDMyMDA3MzI5IDQgMCBSCi9CcmF2dXJhLTI0MzgwMDUxNDEgNCAwIFIKL0JyYXZ1cmEtNDE1NTI5OTU5NCA0IDAgUgovQnJhdnVyYS04MjE2MzM2OTE3IDQgMCBSCi9IZWx2ZXRpY2EtOTgzMDI3MzM2NiA1IDAgUgo+PgovWE9iamVjdCA8PAo+PgovRXh0R1N0YXRlIDw8Cj4+Cj4+Ci9NZWRpYUJveCBbIDAgMCA2MTIgNzkyIF0KL0Fubm90cyBbIF0KL0NvbnRlbnRzIFsgOCAwIFIgXQo+PgplbmRvYmoKCjggMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL0xlbmd0aCAyNDc1Cj4+CnN0cmVhbQp4nL1bS4/juBG++1f4HGAVsh4sEggC7MzOJIdckvQtyGGxjzwwg2AHyebv56Mk25RMWqSRdTfgJs1msUjW46sq6afTu7eTO+ffL387/fr3P3z6+Yd//+O7b796969P339lLkWJzmI6E53ffjyRnN/+cPLz//uzhrOJO799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';
+  var SAMPLE_NAME = 'Accidentals Sampler (sample).pdf';
+  var LS_KEY = 'accidental-highlighter:v1';
+
+  var CATS = [
+    { id: 'explicit', label: 'Printed accidental', hint: '♯ ♭ or a double sign written beside the note', color: '#FFD60A', on: true },
+    { id: 'keysig', label: 'From the key signature', hint: 'Notes the key signature alters, such as every F in G major', color: '#4CC9F0', on: true },
+    { id: 'carried', label: 'Carried through the measure', hint: 'Altered by an earlier accidental or a tie', color: '#FF8FB1', on: true },
+    { id: 'natural', label: 'Printed natural', hint: '♮ that cancels the key or an earlier accidental', color: '#7BD88F', on: false },
+    { id: 'cautionary', label: 'Courtesy or repeated', hint: 'Accidental that repeats what already applies, or sits in parentheses', color: '#B79CFF', on: true }
+  ];
+  var CAT_BY = {}; CATS.forEach(function (c) { CAT_BY[c.id] = c; });
+  var MANUAL_COLOR = '#FF9F43';
+
+  /* ---------- settings ---------- */
+  var store = { colors: {}, catOn: {}, opacity: 55, markSign: true, userMap: {} };
+  try {
+    var saved = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    if (saved && typeof saved === 'object') {
+      if (saved.colors) store.colors = saved.colors;
+      if (saved.catOn) store.catOn = saved.catOn;
+      if (typeof saved.opacity === 'number') store.opacity = saved.opacity;
+      if (typeof saved.markSign === 'boolean') store.markSign = saved.markSign;
+      if (saved.userMap) store.userMap = saved.userMap;
+    }
+  } catch (e) { /* storage unavailable */ }
+  CATS.forEach(function (c) {
+    if (!store.colors[c.id]) store.colors[c.id] = c.color;
+    if (typeof store.catOn[c.id] !== 'boolean') store.catOn[c.id] = c.on;
+  });
+  if (!store.colors.manual) store.colors.manual = MANUAL_COLOR;
+  function persist() { try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch (e) { /* ignore */ } }
+
+  /* ---------- state ---------- */
+  var S = {
+    gen: 0, name: '', baseName: 'score', bytes: null, fp: '', pages: [], noteIndex: {}, existing: 0,
+    zoom: 1, cur: 0, removed: new Set(), forced: new Set(), undoStack: [], redoStack: [],
+    overrides: {}, inspect: false, analyzing: false
+  };
+  var downloads;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var pagesEl = $('pages'), scroller = $('scroller');
+
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 3200);
+  }
+  function tick() { return new Promise(function (r) { setTimeout(r, 0); }); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+
+  /* ---------- pdf.js setup ---------- */
+  try { pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) { /* ignore */ }
+  function openDoc(bytes) {
+    return pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false, disableFontFace: typeof FontFace === 'undefined', fontExtraProperties: true, verbosity: 0 }).promise;
+  }
+
+  /* ---------- state helpers ---------- */
+  function effectiveMap() {
+    var m = {};
+    Object.keys(store.userMap).forEach(function (key) {
+      var v = store.userMap[key], code = key.slice(key.lastIndexOf('|') + 1);
+      if (code.indexOf('c:') === 0 && v.fp !== S.fp) return;
+      m[key] = v;
+    });
+    return m;
+  }
+  function detect(pg, i) {
+    return E.detectPage(pg.prims, { pageIndex: i, userMap: effectiveMap(), overrides: S.overrides });
+  }
+  function reindex() {
+    S.noteIndex = {};
+    S.pages.forEach(function (pg) { if (pg.result) pg.result.notes.forEach(function (n) { S.noteIndex[n.id] = n; }); });
+  }
+  function isOn(n) {
+    if (S.forced.has(n.id)) return true;
+    return !!n.cat && store.catOn[n.cat] && !S.removed.has(n.id);
+  }
+  function colorOf(n) { return store.colors[n.cat || 'manual'] || MANUAL_COLOR; }
+  function catLabel(n) { return n.cat ? CAT_BY[n.cat].label : 'Added by hand'; }
+
+  /* ---------- history ---------- */
+  function snap() { return JSON.stringify({ r: Array.from(S.removed), f: Array.from(S.forced), c: store.catOn }); }
+  function restore(s) {
+    var o = JSON.parse(s); S.removed = new Set(o.r); S.forced = new Set(o.f);
+    CATS.forEach(function (c) { if (typeof o.c[c.id] === 'boolean') store.catOn[c.id] = o.c[c.id]; });
+    persist(); refreshAll();
+  }
+  function pushHistory() {
+    S.undoStack.push(snap()); if (S.undoStack.length > 120) S.undoStack.shift(); S.redoStack = []; updateHistoryButtons();
+  }
+  function undo() { if (!S.undoStack.length) return; S.redoStack.push(snap()); restore(S.undoStack.pop()); updateHistoryButtons(); }
+  function redo() { if (!S.redoStack.length) return; S.undoStack.push(snap()); restore(S.redoStack.pop()); updateHistoryButtons(); }
+  function updateHistoryButtons() { $('undo').disabled = !S.undoStack.length; $('redo').disabled = !S.redoStack.length; }
+
+  /* ---------- viewer layout ---------- */
+  function fitScale() {
+    var w = Math.max(240, scroller.clientWidth - (scroller.clientWidth < 600 ? 16 : 32));
+    var maxW = 0; S.pages.forEach(function (pg) { if (pg.baseW > maxW) maxW = pg.baseW; });
+    return maxW ? Math.min(w / maxW, 2.4) : 1;
+  }
+  function scale() { return fitScale() * S.zoom; }
+
+  function buildPlaceholders() {
+    pagesEl.textContent = '';
+    S.pages.forEach(function (pg, i) {
+      var d = document.createElement('div'); d.className = 'page'; d.dataset.i = i;
+      var c = document.createElement('canvas'); var ov = document.createElement('div'); ov.className = 'ov';
+      var lb = document.createElement('div'); lb.className = 'plabel'; lb.textContent = 'Page ' + (i + 1);
+      d.appendChild(c); d.appendChild(ov); d.appendChild(lb); pagesEl.appendChild(d);
+      pg.el = d; pg.canvas = c; pg.ov = ov; pg.visible = false; pg.rendered = false; pg.renderedScale = 0;
+    });
+    layoutPages();
+    observe();
+  }
+  function layoutPages() {
+    var s = scale();
+    S.pages.forEach(function (pg) {
+      pg.viewport = pg.proxy.getViewport({ scale: s });
+      pg.el.style.width = pg.viewport.width + 'px'; pg.el.style.height = pg.viewport.height + 'px';
+    });
+  }
+  var io = null;
+  function observe() {
+    if (io) io.disconnect();
+    if (!('IntersectionObserver' in window)) { S.pages.forEach(function (pg) { setVisible(pg, true); }); return; }
+    io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { setVisible(S.pages[+e.target.dataset.i], e.isIntersecting); });
+    }, { root: scroller, rootMargin: '1400px 0px' });
+    S.pages.forEach(function (pg) { io.observe(pg.el); });
+  }
+  function setVisible(pg, v) {
+    if (!pg) return;
+    pg.visible = v;
+    if (v) { scheduleRender(pg); drawOverlay(pg); }
+    else {
+      pg.canvas.width = 1; pg.canvas.height = 1; pg.rendered = false; pg.renderedScale = 0; pg.ov.textContent = '';
+      if (pg.task) { try { pg.task.cancel(); } catch (e) { /* ignore */ } }
+    }
+  }
+  var renderChain = Promise.resolve();
+  function scheduleRender(pg) {
+    if (pg.queued) return;
+    pg.queued = true;
+    var gen = S.gen;
+    renderChain = renderChain.then(function () { return doRender(pg, gen); }).catch(function () { /* ignore */ });
+  }
+  async function doRender(pg, gen) {
+    pg.queued = false;
+    if (gen !== S.gen || !pg.visible) return;
+    var s = scale();
+    if (pg.rendered && Math.abs(pg.renderedScale - s) < 1e-6) return;
+    var vp = pg.viewport = pg.proxy.getViewport({ scale: s });
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (vp.width * dpr > 4200) dpr = Math.max(1, 4200 / vp.width);
+    var c = pg.canvas;
+    c.width = Math.floor(vp.width * dpr); c.height = Math.floor(vp.height * dpr);
+    c.style.width = vp.width + 'px'; c.style.height = vp.height + 'px';
+    var ctx = c.getContext('2d');
+    if (pg.task) { try { pg.task.cancel(); } catch (e) { /* ignore */ } }
+    pg.task = pg.proxy.render({ canvasContext: ctx, viewport: vp, transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : undefined });
+    try { await pg.task.promise; pg.rendered = true; pg.renderedScale = s; }
+    catch (e) { if (!(e && e.name === 'RenderingCancelledException')) console.warn('render failed', e); }
+  }
+
+  /* ---------- overlay ---------- */
+  function box(el, r) { el.style.left = r.x + 'px'; el.style.top = r.y + 'px'; el.style.width = r.w + 'px'; el.style.height = r.h + 'px'; }
+  function toBox(vp, rect) {
+    var a = vp.convertToViewportRectangle(rect);
+    return { x: Math.min(a[0], a[2]), y: Math.min(a[1], a[3]), w: Math.abs(a[2] - a[0]), h: Math.abs(a[3] - a[1]) };
+  }
+  function drawOverlay(pg) {
+    var ov = pg.ov; ov.textContent = '';
+    if (!pg.visible || !pg.result || !pg.viewport) return;
+    var vp = pg.viewport, frag = document.createDocumentFragment(), op = store.opacity / 100;
+    if (S.inspect) {
+      pg.result.staves.forEach(function (st) {
+        var d = document.createElement('div'); d.className = 'ins-staff'; box(d, toBox(vp, [st.rect[0], st.rect[1], st.rect[2], st.rect[3]])); frag.appendChild(d);
+      });
+      pg.result.glyphBoxes.forEach(function (g) {
+        var h = g.role === 'notehead' ? g.sp : (g.role.indexOf('clef') === 0 ? 3 * g.sp : 2.4 * g.sp);
+        var d = document.createElement('div');
+        d.className = 'ins-g ' + (g.role === 'notehead' ? 'notehead' : g.role.indexOf('clef') === 0 ? 'clef' : (E.ACC_ROLES.indexOf(g.role) >= 0 ? 'acc' : 'other'));
+        box(d, toBox(vp, [g.x, g.y - h / 2, g.x + g.w, g.y + h / 2])); frag.appendChild(d);
+      });
+      pg.result.orphans.forEach(function (o) {
+        var d = document.createElement('div'); d.className = 'ins-orphan'; d.title = 'Accidental that could not be matched to a note';
+        box(d, toBox(vp, [o.x0, o.y0, o.x1, o.y1])); frag.appendChild(d);
+      });
+    }
+    pg.result.notes.forEach(function (n) {
+      var on = isOn(n), d = document.createElement('div');
+      d.className = 'mark' + (on ? ' on' : ''); d.dataset.id = n.id;
+      d.style.setProperty('--c', colorOf(n)); d.style.setProperty('--op', op);
+      d.title = n.name + ' · ' + (n.cat ? catLabel(n).toLowerCase() : 'no accidental') + (n.via === 'tie' ? ' (tied)' : '') + ' · staff ' + (n.staff + 1) + ', bar ' + n.measure;
+      box(d, toBox(vp, n.rect)); frag.appendChild(d);
+      if (on && store.markSign && n.acc) {
+        var s = document.createElement('div'); s.className = 'mark sign on';
+        s.style.setProperty('--c', colorOf(n)); s.style.setProperty('--op', op); box(s, toBox(vp, n.acc.rect)); frag.appendChild(s);
+      }
+    });
+    ov.appendChild(frag);
+  }
+  function drawAllOverlays() { S.pages.forEach(function (pg) { if (pg.visible) drawOverlay(pg); }); }
+
+  pagesEl.addEventListener('click', function (e) {
+    var m = e.target.closest ? e.target.closest('.mark') : null;
+    if (!m || m.classList.contains('sign')) return;
+    var n = S.noteIndex[m.dataset.id]; if (!n) return;
+    pushHistory();
+    if (isOn(n)) { S.forced.delete(n.id); if (n.cat && store.catOn[n.cat]) S.removed.add(n.id); }
+    else { S.removed.delete(n.id); if (!(n.cat && store.catOn[n.cat])) S.forced.add(n.id); }
+    refreshAll();
+  });
+
+  /* ---------- panel ---------- */
+  function counts() {
+    var shown = {}, found = {}, total = 0, any = 0;
+    CATS.concat([{ id: 'manual' }]).forEach(function (c) { shown[c.id] = 0; found[c.id] = 0; });
+    Object.keys(S.noteIndex).forEach(function (id) {
+      var n = S.noteIndex[id]; total++;
+      if (n.cat) found[n.cat]++;
+      if (isOn(n)) { shown[n.cat || 'manual']++; any++; }
+    });
+    return { shown: shown, found: found, total: total, any: any };
+  }
+  function renderCats() {
+    var c = counts(), host = $('cats');
+    if (!host.firstChild) {
+      host.innerHTML = CATS.map(function (k) {
+        return '<div class="cat" data-c="' + k.id + '"><input type="checkbox" class="sw" role="switch" aria-label="Show ' + esc(k.label) + '">' +
+          '<input type="color" aria-label="Color for ' + esc(k.label) + '"><div class="lbl"><b>' + esc(k.label) + '</b><small>' + esc(k.hint) + '</small></div><div class="n"></div></div>';
+      }).join('') + '<div class="cat" data-c="manual" hidden><span></span><input type="color" aria-label="Color for notes added by hand"><div class="lbl"><b>Added by hand</b><small>Notes you clicked to highlight</small></div><div class="n"></div></div>';
+    }
+    CATS.concat([{ id: 'manual' }]).forEach(function (k) {
+      var row = host.querySelector('[data-c="' + k.id + '"]'); if (!row) return;
+      var sw = row.querySelector('input.sw'); if (sw) sw.checked = !!store.catOn[k.id];
+      row.querySelector('input[type=color]').value = store.colors[k.id];
+      var n = row.querySelector('.n');
+      var f = k.id === 'manual' ? c.shown.manual : c.found[k.id];
+      n.innerHTML = c.shown[k.id] + (k.id !== 'manual' && c.shown[k.id] !== f ? ' <small>of ' + f + '</small>' : '');
+      if (k.id === 'manual') row.hidden = c.shown.manual === 0;
+    });
+    $('opacity').value = store.opacity; $('markSign').checked = store.markSign;
+    $('rmAll').disabled = c.any === 0;
+    var pg = S.pages[S.cur], pn = 0;
+    if (pg && pg.result) pg.result.notes.forEach(function (n) { if (isOn(n)) pn++; });
+    $('rmPage').disabled = pn === 0;
+    $('restore').disabled = S.removed.size === 0;
+  }
+  $('cats').addEventListener('change', function (e) {
+    var row = e.target.closest('.cat'); if (!row) return;
+    var id = row.dataset.c;
+    if (e.target.classList.contains('sw')) { pushHistory(); store.catOn[id] = e.target.checked; persist(); refreshAll(); }
+    else if (e.target.type === 'color') { store.colors[id] = e.target.value; persist(); drawAllOverlays(); }
+  });
+  $('cats').addEventListener('input', function (e) {
+    if (e.target.type === 'color') { var id = e.target.closest('.cat').dataset.c; store.colors[id] = e.target.value; drawAllOverlays(); }
+  });
+  $('opacity').addEventListener('input', function (e) { store.opacity = +e.target.value; persist(); drawAllOverlays(); });
+  $('markSign').addEventListener('change', function (e) { store.markSign = e.target.checked; persist(); drawAllOverlays(); });
+
+  $('rmAll').addEventListener('click', function () {
+    pushHistory(); S.forced.clear();
+    Object.keys(S.noteIndex).forEach(function (id) { if (S.noteIndex[id].cat) S.removed.add(id); });
+    refreshAll(); toast('Removed all highlights. Undo brings them back.');
+  });
+  $('rmPage').addEventListener('click', function () {
+    var pg = S.pages[S.cur]; if (!pg || !pg.result) return;
+    pushHistory();
+    pg.result.notes.forEach(function (n) { S.forced.delete(n.id); if (n.cat) S.removed.add(n.id); });
+    refreshAll(); toast('Removed highlights on page ' + (S.cur + 1) + '.');
+  });
+  $('restore').addEventListener('click', function () { pushHistory(); S.removed.clear(); refreshAll(); });
+  $('undo').addEventListener('click', undo);
+  $('redo').addEventListener('click', redo);
+
+  var CLEF_OPTS = [['auto', 'Auto'], ['treble', 'Treble'], ['bass', 'Bass'], ['alto', 'Alto'], ['tenor', 'Tenor']];
+  function keyOptLabel(n) { return n === 0 ? 'No sharps or flats' : (n > 0 ? plural(n, 'sharp') : plural(-n, 'flat')); }
+  function renderStaves() {
+    var host = $('staves'), pg = S.pages[S.cur];
+    if (!pg || !pg.result || !pg.result.staves.length) {
+      host.innerHTML = '<p class="hint" style="margin-top:0">' + (S.analyzing ? 'Reading the page…' : 'No staves on this page.') + '</p>'; return;
+    }
+    host.innerHTML = pg.result.staves.map(function (st, k) {
+      var ov = S.overrides[st.overrideKey] || {};
+      var clef = CLEF_OPTS.map(function (o) {
+        var lab = o[0] === 'auto' ? (st.autoClef ? 'Auto \u00B7 ' + st.autoClef : 'Auto') : o[1];
+        return '<option value="' + o[0] + '"' + ((ov.clef || 'auto') === o[0] ? ' selected' : '') + '>' + lab + '</option>';
+      }).join('');
+      var keys = '<option value="auto"' + (ov.key === undefined || ov.key === 'auto' ? ' selected' : '') + '>Auto \u00B7 ' + keyOptLabel(st.autoKeyCount).toLowerCase() + '</option>';
+      for (var n = 0; n >= -7; n--) keys += '<option value="' + n + '"' + (ov.key !== undefined && ov.key !== 'auto' && +ov.key === n ? ' selected' : '') + '>' + keyOptLabel(n) + '</option>';
+      for (n = 1; n <= 7; n++) keys += '<option value="' + n + '"' + (ov.key !== undefined && ov.key !== 'auto' && +ov.key === n ? ' selected' : '') + '>' + keyOptLabel(n) + '</option>';
+      return '<div class="staff" data-k="' + k + '"><span>Staff ' + (k + 1) + '</span><select class="s-clef" aria-label="Clef for staff ' + (k + 1) + '">' + clef + '</select><select class="s-key" aria-label="Key for staff ' + (k + 1) + '">' + keys + '</select></div>';
+    }).join('');
+  }
+  $('staves').addEventListener('change', function (e) {
+    var row = e.target.closest('.staff'); if (!row) return;
+    var pg = S.pages[S.cur], st = pg.result.staves[+row.dataset.k];
+    var clef = row.querySelector('.s-clef').value, key = row.querySelector('.s-key').value;
+    if (clef === 'auto' && key === 'auto') delete S.overrides[st.overrideKey];
+    else S.overrides[st.overrideKey] = { clef: clef, key: key };
+    pg.result = detect(pg, S.cur); reindex(); refreshAll();
+  });
+
+  function summaryHtml() {
+    var c = counts(), nStaves = 0, orphans = 0, pagesDone = 0;
+    S.pages.forEach(function (pg) { if (pg.result) { pagesDone++; nStaves += pg.result.staves.length; orphans += pg.result.orphans.length; } });
+    var h = '';
+    if (!S.bytes) return '<div class="big">Open a score to begin</div><div class="sub">Choose a PDF exported from notation software, or try the sample.</div>';
+    h += '<div class="big">' + plural(c.total, 'note') + ' on ' + plural(nStaves, 'staff').replace('staffs', 'staves') + '</div>';
+    h += '<div class="sub">' + plural(S.pages.length, 'page') + (S.analyzing ? ' · reading page ' + Math.min(pagesDone + 1, S.pages.length) + ' of ' + S.pages.length : '') + (c.total ? ' · ' + plural(c.any, 'highlight') + ' showing' : '') + '</div>';
+    if (S.existing) h += '<div class="notice">This PDF already had ' + plural(S.existing, 'highlight') + ' from this app. They are removed from the working copy; saving a PDF without highlights gives you a clean file.</div>';
+    if (!S.analyzing) {
+      if (!nStaves) h += '<div class="notice warn">No staves were found. This looks like a scan or an image-only PDF. This version reads vector scores exported from notation programs.</div>';
+      else if (!c.total) h += '<div class="notice warn">Staves were found, but no noteheads were recognized. Open the symbol map and set which symbol is a notehead.<button type="button" class="btn small" data-act="symbols">Open symbol map</button></div>';
+      else {
+        var bad = 0; Object.keys(S.noteIndex).forEach(function (id) { if (S.noteIndex[id].cat) bad++; });
+        if (c.total >= 60 && bad / c.total > 0.8) h += '<div class="notice">Most notes carry an accidental. If this is not an atonal or chromatic piece, check the keys under Staves.</div>';
+        if (orphans) h += '<div class="notice">' + plural(orphans, 'accidental') + ' could not be matched to a note. Turn on Inspect to see them outlined in red.</div>';
+      }
+    }
+    return h;
+  }
+  $('summary').addEventListener('click', function (e) { if (e.target.dataset && e.target.dataset.act === 'symbols') openSymbols(); });
+
+  function symbolInfo() {
+    var cl = collectClasses(), unmapped = cl.filter(function (c) { return !c.role && c.n >= 2; }).length, mapped = cl.length - cl.filter(function (c) { return !c.role; }).length;
+    $('symbolInfo').textContent = !S.bytes ? '' : (mapped + ' ' + (mapped === 1 ? 'symbol is' : 'symbols are') + ' recognized' + (unmapped ? '; ' + unmapped + ' more appear on the staves.' : '.'));
+  }
+
+  function refreshAll() {
+    renderCats(); drawAllOverlays();
+    $('summary').innerHTML = summaryHtml(); symbolInfo(); renderStaves();
+    var any = S.bytes && !S.analyzing; $('exAnn').disabled = !any || !downloads; $('exClean').disabled = !any || !downloads; $('exJson').disabled = !any || !downloads;
+    var hint = $('exHint');
+    hint.textContent = downloads === null ? 'Saving files is not available in this view. Open the page in a regular browser to save PDFs.' : 'Your file is never uploaded. Highlights are saved as standard PDF annotations, so Acrobat, Preview and forScore can show and delete them too.';
+    $('pageInd').textContent = S.pages.length ? 'Page ' + (S.cur + 1) + ' / ' + S.pages.length : ' ';
+    $('pPrev').disabled = S.cur <= 0; $('pNext').disabled = S.cur >= S.pages.length - 1;
+    updateHistoryButtons();
+  }
+
+  /* ---------- loading ---------- */
+  function setProgress(f) { $('progressBar').style.width = f === null ? '0' : Math.round(f * 100) + '%'; }
+  function b64ToBytes(b64) { var bin = atob(b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+
+  async function loadBytes(buf, name) {
+    var gen = ++S.gen;
+    S.analyzing = true; S.bytes = null; S.pages = []; S.noteIndex = {}; S.removed = new Set(); S.forced = new Set();
+    S.undoStack = []; S.redoStack = []; S.overrides = {}; S.existing = 0; S.cur = 0; S.zoom = 1;
+    pagesEl.innerHTML = '<div class="empty"><h3>Opening…</h3></div>';
+    $('fileName').textContent = name; $('fileMeta').textContent = '';
+    refreshAll();
+    try {
+      var bytes = new Uint8Array(buf), doc = await openDoc(bytes);
+      if (gen !== S.gen) return;
+      /* look for highlights written by this app and take them out of the working copy */
+      var existing = 0;
+      for (var p = 1; p <= doc.numPages; p += 20) {
+        var batch = [];
+        for (var q2 = p; q2 < p + 20 && q2 <= doc.numPages; q2++) batch.push(doc.getPage(q2).then(function (pp) { return pp.getAnnotations(); }));
+        (await Promise.all(batch)).forEach(function (anns) {
+          anns.forEach(function (a) { if (a.titleObj && a.titleObj.str === E.AUTHOR) existing++; });
+        });
+      }
+      if (existing) {
+        var cleaned = await E.cleanBytes(PDFLib, bytes);
+        bytes = cleaned.bytes; doc = await openDoc(bytes); S.existing = existing;
+      }
+      if (gen !== S.gen) return;
+      S.bytes = bytes; S.fp = (doc.fingerprints && doc.fingerprints[0]) || '';
+      S.name = name; S.baseName = name.replace(/\.pdf$/i, '').replace(/[^\w\- .()]+/g, '_').trim() || 'score';
+      for (var i = 1; i <= doc.numPages; i++) {
+        var proxy = await doc.getPage(i), vp = proxy.getViewport({ scale: 1 });
+        S.pages.push({ proxy: proxy, baseW: vp.width, prims: null, result: null });
+      }
+      $('fileMeta').textContent = plural(doc.numPages, 'page');
+      buildPlaceholders(); refreshAll();
+      scroller.scrollTop = 0;
+      for (var k = 0; k < S.pages.length; k++) {
+        if (gen !== S.gen) return;
+        setProgress(k / S.pages.length);
+        var pg = S.pages[k];
+        try { pg.prims = await E.extractPage(pg.proxy, pdfjsLib); pg.result = detect(pg, k); }
+        catch (err) { console.warn('page ' + (k + 1) + ' failed', err); pg.result = { staves: [], notes: [], orphans: [], classes: {}, glyphBoxes: [], stats: { notes: 0 } }; }
+        reindex();
+        if (pg.visible) drawOverlay(pg);
+        if (k === 0 || k % 3 === 2) refreshAll();
+        await tick();
+      }
+      S.analyzing = false; setProgress(null); refreshAll();
+    } catch (err) {
+      if (gen !== S.gen) return;
+      S.analyzing = false; setProgress(null); S.bytes = null; S.pages = [];
+      var msg = err && err.name === 'PasswordException' ? 'This PDF is password-protected, so it cannot be opened here.' : 'This file could not be read as a PDF.';
+      pagesEl.innerHTML = '<div class="empty"><h3>Could not open the file</h3><p>' + esc(msg) + '</p></div>';
+      refreshAll(); console.warn(err);
+    }
+  }
+  function loadSample() { return loadBytes(b64ToBytes(SAMPLE_B64), SAMPLE_NAME); }
+  $('btnSample').addEventListener('click', loadSample);
+  $('btnOpen').addEventListener('click', function () { $('fileInput').click(); });
+  $('fileInput').addEventListener('change', async function (e) {
+    var f = e.target.files && e.target.files[0]; if (!f) return;
+    loadBytes(await f.arrayBuffer(), f.name); e.target.value = '';
+  });
+  var vw = $('viewer');
+  ['dragenter', 'dragover'].forEach(function (t) { vw.addEventListener(t, function (e) { e.preventDefault(); vw.classList.add('dragging'); }); });
+  ['dragleave', 'drop'].forEach(function (t) { vw.addEventListener(t, function (e) { e.preventDefault(); vw.classList.remove('dragging'); }); });
+  vw.addEventListener('drop', async function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadBytes(await f.arrayBuffer(), f.name);
+  });
+
+  /* ---------- zoom, paging ---------- */
+  function relayout() { if (!S.pages.length) return; layoutPages(); S.pages.forEach(function (pg) { pg.rendered = false; if (pg.visible) { scheduleRender(pg); drawOverlay(pg); } }); }
+  function setZoom(z) {
+    var anchor = currentAnchor(); S.zoom = Math.max(.35, Math.min(4, z)); relayout();
+    if (anchor) scroller.scrollTop = anchor.pg.el.offsetTop - 18 + anchor.frac * anchor.pg.el.offsetHeight - anchor.off;
+  }
+  function currentAnchor() {
+    var pg = S.pages[S.cur]; if (!pg || !pg.el.offsetHeight) return null;
+    var off = 40, frac = (scroller.scrollTop + 18 + off - pg.el.offsetTop) / pg.el.offsetHeight;
+    return { pg: pg, frac: Math.max(0, frac), off: off };
+  }
+  $('zIn').addEventListener('click', function () { setZoom(S.zoom * 1.2); });
+  $('zOut').addEventListener('click', function () { setZoom(S.zoom / 1.2); });
+  $('zFit').addEventListener('click', function () { setZoom(1); });
+  function goPage(i) { i = Math.max(0, Math.min(S.pages.length - 1, i)); var pg = S.pages[i]; if (pg) scroller.scrollTo({ top: pg.el.offsetTop - 18, behavior: 'auto' }); }
+  $('pPrev').addEventListener('click', function () { goPage(S.cur - 1); });
+  $('pNext').addEventListener('click', function () { goPage(S.cur + 1); });
+  var scrollRaf = 0;
+  scroller.addEventListener('scroll', function () {
+    if (scrollRaf) return;
+    scrollRaf = requestAnimationFrame(function () {
+      scrollRaf = 0;
+      var mid = scroller.scrollTop + scroller.clientHeight * 0.4, idx = 0;
+      for (var i = 0; i < S.pages.length; i++) { if (S.pages[i].el.offsetTop - 18 <= mid) idx = i; }
+      if (idx !== S.cur) { S.cur = idx; $('pageInd').textContent = 'Page ' + (idx + 1) + ' / ' + S.pages.length; $('pPrev').disabled = idx <= 0; $('pNext').disabled = idx >= S.pages.length - 1; renderStaves(); renderCats(); }
+    });
+  });
+  var rsT = 0;
+  window.addEventListener('resize', function () { clearTimeout(rsT); rsT = setTimeout(relayout, 150); });
+  $('inspect').addEventListener('change', function (e) { S.inspect = e.target.checked; drawAllOverlays(); });
+
+  /* ---------- tabs ---------- */
+  function setTab(t) {
+    $('app').dataset.tab = t;
+    $('tabScore').setAttribute('aria-selected', String(t === 'score')); $('tabControls').setAttribute('aria-selected', String(t === 'controls'));
+    if (t === 'score') relayout();
+  }
+  $('tabScore').addEventListener('click', function () { setTab('score'); });
+  $('tabControls').addEventListener('click', function () { setTab('controls'); });
+
+  /* ---------- keyboard ---------- */
+  document.addEventListener('keydown', function (e) {
+    var mod = e.ctrlKey || e.metaKey, tag = (e.target && e.target.tagName) || '';
+    if (e.key === 'Escape' && $('symModal').classList.contains('open')) { closeSymbols(); return; }
+    if (tag === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'range') return;
+    if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
+    else if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+  });
+
+  /* ---------- symbol map ---------- */
+  function splitKey(ck) { var i = ck.lastIndexOf('|'); return [ck.slice(0, i), ck.slice(i + 1)]; }
+  function codeText(k) { return k.indexOf('u:') === 0 ? 'U+' + k.slice(2) : 'code ' + k.slice(2); }
+  function collectClasses() {
+    var m = {}, um = effectiveMap();
+    S.pages.forEach(function (pg, pi) {
+      if (!pg.result) return;
+      Object.keys(pg.result.classes).forEach(function (ck) {
+        var c = pg.result.classes[ck], a = m[ck];
+        if (!a) { a = m[ck] = { ck: ck, f: c.f, k: c.k, n: 0, sample: null }; }
+        a.n += c.n;
+        if (!a.sample && c.samples.length) { a.sample = Object.assign({ page: pi }, c.samples[0]); }
+      });
+    });
+    return Object.keys(m).map(function (ck) {
+      var a = m[ck], u = um[ck], d = E.defaultRole(a.k);
+      a.user = !!u; a.dflt = d; a.role = u ? (u.role === 'ignore' ? '' : u.role) : (d || ''); a.dy = (u && u.dy) || 0;
+      return a;
+    }).sort(function (x, y) { return y.n - x.n; });
+  }
+  var thumbGen = 0;
+  async function renderThumb(canvas, a) {
+    var s = a.sample; if (!s) return;
+    var pg = S.pages[s.page]; if (!pg) return;
+    var sp = s.sp, k = 16 / sp, big = s.w > 2.2 * sp || s.s > 3.6 * sp;
+    var h = (big ? 7.5 : 4.2) * sp, w = Math.max(s.w, 1.2 * sp) + 1.2 * sp;
+    var x0 = s.x - 0.6 * sp, y1 = s.y + h / 2;
+    var vp = pg.proxy.getViewport({ scale: k, rotation: 0 }), tl = vp.convertToViewportPoint(x0, y1);
+    canvas.width = Math.max(8, Math.round(w * k)); canvas.height = Math.max(8, Math.round(h * k));
+    var task = pg.proxy.render({ canvasContext: canvas.getContext('2d'), viewport: vp, transform: [1, 0, 0, 1, -tl[0], -tl[1]] });
+    await task.promise;
+  }
+  async function openSymbols() {
+    $('symModal').classList.add('open'); buildSymbols();
+  }
+  function closeSymbols() { $('symModal').classList.remove('open'); thumbGen++; }
+  async function buildSymbols() {
+    var gen = ++thumbGen, host = $('symBody'), list = collectClasses(), hide = $('symHide').checked;
+    $('symSheet').classList.toggle('adv', $('symAdv').checked);
+    var txt = $('symTxt').checked;
+    function small(a) { var sm = a.sample; return !a.role && !a.user && sm && sm.s < 2.4 * sm.sp; }
+    var shown = list.filter(function (a) { return !(hide && a.role) && (txt || !small(a)); });
+    if (!shown.length) { host.innerHTML = '<p class="hint">' + (list.length ? 'Nothing left to review. Every symbol on the staves has a role.' : 'No symbols have been read yet.') + '</p>'; return; }
+    var opts = E.ROLES.map(function (r) { return '<option value="' + r[0] + '">' + r[1] + '</option>'; }).join('');
+    var html = '', groups = [['Needs a role', shown.filter(function (a) { return !a.role; })], ['In use', shown.filter(function (a) { return a.role; })]];
+    groups.forEach(function (g) {
+      if (!g[1].length) return;
+      html += '<div class="sec">' + g[0] + '</div>';
+      g[1].forEach(function (a) {
+        html += '<div class="sym" data-ck="' + esc(a.ck) + '"><div class="th"><canvas></canvas></div>' +
+          '<div class="nm">' + esc(a.f) + '<br>' + esc(codeText(a.k)) + '<small>' + plural(a.n, 'instance') + (a.user ? '<span class="tag">your choice</span>' : (a.dflt ? '<span class="tag">built in</span>' : '')) + '</small></div>' +
+          '<div class="ctl"><select class="r-role" aria-label="Role of this symbol"><option value="">Not used</option>' + opts.replace('<option value="ignore">Ignore</option>', '') + '</select>' +
+          '<label class="shift">Pitch shift <select class="r-dy"><option>-2</option><option>-1</option><option selected>0</option><option>1</option><option>2</option></select></label></div></div>';
+      });
+    });
+    host.innerHTML = html;
+    var byCk = {}; list.forEach(function (a) { byCk[a.ck] = a; });
+    host.querySelectorAll('.sym').forEach(function (row) {
+      var a = byCk[row.dataset.ck]; row.querySelector('.r-role').value = a.role || ''; row.querySelector('.r-dy').value = String(a.dy);
+    });
+    for (var i = 0; i < shown.length; i++) {
+      if (gen !== thumbGen) return;
+      var cv = host.querySelector('.sym[data-ck="' + (window.CSS && CSS.escape ? CSS.escape(shown[i].ck) : shown[i].ck.replace(/"/g, '\\"')) + '"] canvas');
+      if (cv) { try { await renderThumb(cv, shown[i]); } catch (e) { /* thumbnail is optional */ } }
+    }
+  }
+  var remapT = 0;
+  $('symBody').addEventListener('change', function (e) {
+    var row = e.target.closest('.sym'); if (!row) return;
+    var ck = row.dataset.ck, role = row.querySelector('.r-role').value, dy = +row.querySelector('.r-dy').value;
+    var parts = splitKey(ck), d = E.defaultRole(parts[1]);
+    if ((role || '') === (d || '') && dy === 0) delete store.userMap[ck];
+    else store.userMap[ck] = { role: role || 'ignore', dy: dy, fp: S.fp };
+    persist();
+    clearTimeout(remapT); remapT = setTimeout(redetectAll, 60);
+  });
+  async function redetectAll() {
+    S.pages.forEach(function (pg, i) { if (pg.prims) pg.result = detect(pg, i); });
+    reindex(); refreshAll();
+    var keepTop = $('symBody').scrollTop;
+    await buildSymbols(); $('symBody').scrollTop = keepTop;
+  }
+  $('btnSymbols').addEventListener('click', openSymbols);
+  $('symClose').addEventListener('click', closeSymbols);
+  $('symModal').addEventListener('click', function (e) { if (e.target === $('symModal')) closeSymbols(); });
+  $('symHide').addEventListener('change', buildSymbols);
+  $('symTxt').addEventListener('change', buildSymbols);
+  $('symAdv').addEventListener('change', function () { $('symSheet').classList.toggle('adv', $('symAdv').checked); });
+  $('symReset').addEventListener('click', function () { store.userMap = {}; persist(); redetectAll(); toast('Symbol choices reset.'); });
+
+  /* ---------- saving ---------- */
+  /* Used only outside the Claude viewer (for example on GitHub Pages), where a plain browser download works. */
+  function browserDownloads() {
+    return {
+      save: function (req) {
+        return new Promise(function (resolve, reject) {
+          try {
+            var blob = req.data instanceof Blob ? req.data : new Blob([req.data]);
+            var url = URL.createObjectURL(blob), a = document.createElement('a');
+            a.href = url; a.download = req.filename; document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+            resolve({ status: 'saved' });
+          } catch (e) { reject({ code: 'unavailable', message: e.message }); }
+        });
+      }
+    };
+  }
+  async function saveFile(filename, data) {
+    if (!downloads) { toast('Saving files is not available in this view.'); return false; }
+    try { var r = await downloads.save({ filename: filename, data: data }); toast((r && r.status === 'delivered' ? 'Sent ' : 'Saved ') + filename); return true; }
+    catch (e) {
+      if (e && e.code === 'declined') toast('Save cancelled.');
+      else if (e && e.code === 'rate_limited') toast('Another save prompt is open. Answer it, then try again.');
+      else toast('Could not save the file' + (e && e.message ? ': ' + e.message : '.'));
+      return false;
+    }
+  }
+  function buildItems() {
+    var items = [];
+    S.pages.forEach(function (pg, i) {
+      if (!pg.result) return;
+      pg.result.notes.forEach(function (n) {
+        if (!isOn(n)) return;
+        var rects = [n.rect]; if (store.markSign && n.acc) rects.push(n.acc.rect);
+        items.push({ page: i, id: n.id, cat: n.cat || 'manual', label: n.name + ' - ' + catLabel(n), rects: rects });
+      });
+    });
+    return items;
+  }
+  async function busy(btn, fn) {
+    var t = btn.textContent; btn.disabled = true; btn.textContent = 'Working…';
+    try { await fn(); } catch (e) { console.warn(e); toast('Something went wrong while building the file.'); }
+    btn.textContent = t; refreshAll();
+  }
+  $('exAnn').addEventListener('click', function () {
+    busy($('exAnn'), async function () {
+      var items = buildItems();
+      if (!items.length) { toast('Nothing is highlighted, so there is nothing to add.'); return; }
+      var out = await E.writeHighlights(PDFLib, S.bytes, items, { colors: store.colors, opacity: store.opacity / 100 });
+      await saveFile(S.baseName.replace(/\(sample\)/, '').trim() + ' - accidentals.pdf', new Blob([out.bytes], { type: 'application/pdf' }));
+    });
+  });
+  $('exClean').addEventListener('click', function () {
+    busy($('exClean'), async function () {
+      var out = await E.cleanBytes(PDFLib, S.bytes);
+      await saveFile(S.baseName.replace(/\(sample\)/, '').trim() + ' - clean.pdf', new Blob([out.bytes], { type: 'application/pdf' }));
+    });
+  });
+  $('exJson').addEventListener('click', function () {
+    busy($('exJson'), async function () {
+      var rows = [];
+      S.pages.forEach(function (pg, i) {
+        if (!pg.result) return;
+        pg.result.notes.forEach(function (n) {
+          rows.push({ page: i + 1, staff: n.staff + 1, bar: n.measure, note: n.name, category: n.cat, printedAccidental: n.acc ? n.acc.role : null, tied: n.via === 'tie', highlighted: isOn(n), rect: n.rect.map(function (v) { return Math.round(v * 100) / 100; }) });
+        });
+      });
+      await saveFile(S.baseName.replace(/\(sample\)/, '').trim() + ' - notes.json', JSON.stringify({ file: S.name, notes: rows }, null, 1));
+    });
+  });
+
+  /* ---------- start ---------- */
+  (async function () {
+    try { var cl = window.claude; downloads = cl && cl.use ? await cl.use('downloads') : null; } catch (e) { downloads = null; }
+    if (!window.claude) downloads = browserDownloads();
+    refreshAll();
+  })();
+  renderCats(); updateHistoryButtons(); refreshAll();
+  loadSample();
+  window.__acc = { S: S, store: store, E: E, loadBytes: loadBytes, isOn: isOn, buildItems: buildItems, collectClasses: collectClasses };
+})();
+</script>
